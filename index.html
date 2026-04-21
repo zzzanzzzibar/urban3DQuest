@@ -84,6 +84,9 @@
     <div class="ps-title">Urban3DQuest</div>
     <p class="ps-sub">Chasse au trésor urbaine<br>Entre ton pseudo pour rejoindre</p>
     <input type="text" id="pseudoInput" placeholder="TON PSEUDO" maxlength="20" autocomplete="off" autocapitalize="characters">
+    <div id="gameCodeWrap" style="display:none">
+      <input type="text" id="gameCodeInput" placeholder="CODE D'ACCÈS" maxlength="20" autocomplete="off" autocapitalize="characters" style="margin-top:0;border-color:#7c3aed">
+    </div>
     <p id="pseudoErr" style="color:#f87171;font-size:0.78rem;margin-bottom:10px;display:none"></p>
     <button class="btn-main" id="startBtn" onclick="startGame()">🚀 Rejoindre le jeu</button>
   </div>
@@ -159,6 +162,8 @@ let treasures    = [];
 let mapMarkers   = {};
 let proximityR   = 100;
 let mapCenter    = [48.8566, 2.3522]; // default Paris, overridden by config
+let gameStart    = null;  // Date or null — reference timestamp for score calc
+let gameCode     = '';    // empty = open access
 let playerLat    = null, playerLng = null;
 let scanner      = null;
 let lbInterval   = null;
@@ -168,11 +173,18 @@ let geoWatch     = null;
 let bgMap = null;
 
 window.addEventListener('load', async () => {
-  // Pre-fetch config to get mapCenter for background map
-  const { data: cfgData } = await db.from('config').select('key,value').eq('key','mapCenter');
-  if (cfgData && cfgData.length) {
-    const parts = cfgData[0].value.split(',').map(Number);
-    if (parts.length === 2 && !isNaN(parts[0])) mapCenter = parts;
+  // Pre-fetch config to get mapCenter + gameCode for landing screen
+  const { data: cfgData } = await db.from('config').select('key,value').in('key',['mapCenter','gameCode']);
+  if (cfgData) {
+    const cMap = Object.fromEntries(cfgData.map(r => [r.key, r.value]));
+    if (cMap.mapCenter) {
+      const parts = cMap.mapCenter.split(',').map(Number);
+      if (parts.length === 2 && !isNaN(parts[0])) mapCenter = parts;
+    }
+    if (cMap.gameCode) {
+      gameCode = cMap.gameCode;
+      document.getElementById('gameCodeWrap').style.display = 'block';
+    }
   }
 
   // Init background map on landing
@@ -212,6 +224,12 @@ async function startGame() {
   const pseudo = input.value.trim().toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
 
   if (pseudo.length < 2) { err.textContent = 'Pseudo trop court (min 2 caractères)'; err.style.display = 'block'; return; }
+
+  // Check game code if required
+  if (gameCode) {
+    const entered = (document.getElementById('gameCodeInput').value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if (entered !== gameCode) { err.textContent = 'Code d\'accès incorrect.'; err.style.display = 'block'; return; }
+  }
   err.style.display = 'none';
 
   document.getElementById('startBtn').disabled = true;
@@ -257,6 +275,10 @@ async function initGame(pendingFoundId) {
     if (c.mapCenter) {
       const parts = c.mapCenter.split(',').map(Number);
       if (parts.length === 2 && !isNaN(parts[0])) mapCenter = parts;
+    }
+    if (c.gameStart) {
+      const gs = new Date(c.gameStart);
+      if (!isNaN(gs.getTime())) gameStart = gs;
     }
   }
 
@@ -418,7 +440,9 @@ async function processFindById(treasureId) {
   if (t.type === 'unique' && foundList.length > 0) { showFoundResult('taken', t); return; }
 
   // Calculate duration
-  const durationSec = Math.round((Date.now() - new Date(t.placed_at).getTime()) / 1000);
+  // Calculate duration from max(placed_at, gameStart) to now
+  const refTime = gameStart && gameStart > new Date(t.placed_at) ? gameStart : new Date(t.placed_at);
+  const durationSec = Math.max(0, Math.round((Date.now() - refTime.getTime()) / 1000));
 
   // Update treasure found_by
   const newFoundBy = t.type === 'unique' ? myPseudo : [...foundList, myPseudo].join(',');
