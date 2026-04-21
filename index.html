@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>Urban3DQuest</title>
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;overflow:hidden}
+    /* ── Pseudo screen ── */
+    #pseudoScreen{position:fixed;inset:0;background:#0f172a;z-index:500;display:flex;align-items:center;justify-content:center;padding:24px}
+    .ps-box{width:100%;max-width:360px;text-align:center}
+    .ps-box .logo{font-size:3rem;margin-bottom:12px}
+    .ps-box h1{font-size:1.4rem;margin-bottom:6px}
+    .ps-box p{font-size:0.82rem;color:#64748b;margin-bottom:28px}
+    .ps-box input{width:100%;padding:14px;background:#1e293b;border:2px solid #334155;border-radius:12px;color:#f1f5f9;font-size:1.1rem;text-align:center;margin-bottom:12px;letter-spacing:.05em}
+    .ps-box input:focus{outline:none;border-color:#3b82f6}
+    .btn-main{width:100%;padding:16px;border:none;border-radius:12px;background:#3b82f6;color:#fff;font-size:1.05rem;font-weight:700;cursor:pointer}
+    .btn-main:disabled{background:#1e293b;color:#475569}
+    /* ── Header ── */
+    header{background:#1e293b;padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #334155}
+    header h1{font-size:0.88rem;flex:1;color:#94a3b8}
+    .pseudo-chip{background:#172554;color:#93c5fd;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
+    .score-chip{background:#052e16;color:#4ade80;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
+    /* ── Nav ── */
+    nav{display:flex;background:#1e293b;border-bottom:1px solid #334155}
+    nav button{flex:1;padding:11px 4px;background:none;border:none;color:#64748b;font-size:0.75rem;cursor:pointer}
+    nav button.active{color:#f1f5f9;border-bottom:2px solid #3b82f6}
+    /* ── Panels ── */
+    .panel{display:none}
+    .panel.active{display:block}
+    /* ── Map ── */
+    #gameMap{height:calc(100vh - 98px)}
+    /* ── Radar bar ── */
+    #radarBar{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(30,41,59,.95);border:1px solid #334155;border-radius:24px;padding:8px 20px;font-size:0.82rem;color:#94a3b8;z-index:200;display:none;white-space:nowrap;backdrop-filter:blur(8px)}
+    #radarBar.near{color:#fbbf24;border-color:#d97706;background:rgba(69,26,3,.95)}
+    #radarBar.very-near{color:#4ade80;border-color:#16a34a;background:rgba(5,46,22,.95);animation:pulse 1s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+    /* ── QR FAB ── */
+    #qrFab{position:fixed;bottom:24px;right:24px;width:64px;height:64px;background:#3b82f6;border:none;border-radius:50%;font-size:1.6rem;color:#fff;cursor:pointer;z-index:200;box-shadow:0 4px 20px rgba(59,130,246,.5);display:none}
+    /* ── Leaderboard ── */
+    #panelScores{height:calc(100vh - 98px);overflow-y:auto;padding:16px;max-width:600px;margin:0 auto}
+    .lb-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#1e293b;border-radius:10px;margin-bottom:8px}
+    .lb-rank{font-size:1.1rem;font-weight:700;width:32px;text-align:center;color:#64748b}
+    .lb-rank.gold{color:#fbbf24}
+    .lb-rank.silver{color:#94a3b8}
+    .lb-rank.bronze{color:#c2855a}
+    .lb-name{flex:1;font-weight:600;font-size:0.9rem}
+    .lb-name.me{color:#93c5fd}
+    .lb-stats{text-align:right;font-size:0.78rem;color:#64748b}
+    .lb-stats strong{display:block;font-size:0.9rem;color:#f1f5f9}
+    .lb-refresh{font-size:0.72rem;color:#334155;text-align:center;padding:8px;margin-top:4px}
+    /* ── QR Modal ── */
+    .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:600;align-items:center;justify-content:center;flex-direction:column;padding:24px}
+    .modal.open{display:flex}
+    #qrReader{width:100%;max-width:320px;border-radius:12px;overflow:hidden}
+    .modal-close{margin-top:20px;padding:12px 32px;border:none;border-radius:10px;background:#1e293b;color:#f1f5f9;font-size:1rem;cursor:pointer;border:1px solid #334155}
+    /* ── Found modal ── */
+    #foundModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:700;align-items:center;justify-content:center;padding:24px}
+    #foundModal.open{display:flex}
+    .found-box{background:#1e293b;border-radius:20px;padding:28px 24px;width:100%;max-width:400px;text-align:center}
+    .found-emoji{font-size:3rem;margin-bottom:12px}
+    .found-box h2{font-size:1.2rem;margin-bottom:8px}
+    .found-box p{font-size:0.85rem;color:#94a3b8;margin-bottom:20px}
+    .found-box .duration{font-size:1.6rem;font-weight:700;color:#4ade80;margin-bottom:8px}
+    /* ── Pause screen ── */
+    #pauseScreen{display:none;position:fixed;inset:0;background:rgba(15,23,42,.97);z-index:800;align-items:center;justify-content:center;text-align:center;flex-direction:column;gap:16px}
+    #pauseScreen.open{display:flex}
+  </style>
+</head>
+<body>
+
+<!-- ── Pseudo screen ────────────────────────────────── -->
+<div id="pseudoScreen">
+  <div class="ps-box">
+    <div class="logo">🗺</div>
+    <h1>Urban3DQuest</h1>
+    <p>Chasse au trésor urbaine — entre ton pseudo pour commencer</p>
+    <input type="text" id="pseudoInput" placeholder="TON PSEUDO" maxlength="20" autocomplete="off" autocapitalize="characters">
+    <p id="pseudoErr" style="color:#f87171;font-size:0.78rem;margin-bottom:10px;display:none"></p>
+    <button class="btn-main" id="startBtn" onclick="startGame()">🚀 Rejoindre le jeu</button>
+  </div>
+</div>
+
+<!-- ── Header ────────────────────────────────────────── -->
+<header>
+  <h1>🗺 Urban3DQuest</h1>
+  <span class="pseudo-chip" id="headerPseudo"></span>
+  <span class="score-chip" id="headerScore">0 🏆</span>
+</header>
+<nav>
+  <button class="active" onclick="showTab('map',this)">🗺 Carte</button>
+  <button onclick="showTab('scores',this)">🏆 Scores</button>
+</nav>
+
+<!-- ── Game Map ───────────────────────────────────────── -->
+<div id="panelMap" class="panel active">
+  <div id="gameMap"></div>
+</div>
+
+<!-- ── Leaderboard ───────────────────────────────────── -->
+<div id="panelScores" class="panel">
+  <div id="lbList"><p style="color:#475569;text-align:center;padding:40px">Chargement…</p></div>
+  <div class="lb-refresh" id="lbRefresh"></div>
+</div>
+
+<!-- ── Radar bar ─────────────────────────────────────── -->
+<div id="radarBar"></div>
+
+<!-- ── QR Scan FAB ───────────────────────────────────── -->
+<button id="qrFab" onclick="openScanner()" title="Scanner un QR code">📷</button>
+
+<!-- ── QR Scanner modal ──────────────────────────────── -->
+<div class="modal" id="scanModal">
+  <div id="qrReader"></div>
+  <button class="modal-close" onclick="closeScanner()">✕ Fermer</button>
+</div>
+
+<!-- ── Found modal ───────────────────────────────────── -->
+<div id="foundModal">
+  <div class="found-box">
+    <div class="found-emoji" id="foundEmoji">🎉</div>
+    <h2 id="foundTitle">Trésor trouvé !</h2>
+    <div class="duration" id="foundDuration"></div>
+    <p id="foundDesc"></p>
+    <button class="btn-main" onclick="closeFound()">✅ Continuer</button>
+  </div>
+</div>
+
+<!-- ── Pause screen ──────────────────────────────────── -->
+<div id="pauseScreen">
+  <div style="font-size:3rem">⏸</div>
+  <h2>Jeu en pause</h2>
+  <p style="color:#64748b;font-size:0.85rem">L'organisateur a mis le jeu en pause.<br>Patiente…</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const SUPABASE_URL = 'https://jocfvobqfpygixrawnbq.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_M8SxhXrmh17vrOf1WlOM6Q_ZNKNqQhM';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let myPseudo     = localStorage.getItem('u3dq_pseudo') || '';
+let myScore      = 0;
+let myFoundCount = 0;
+let gameMap      = null;
+let treasures    = [];
+let mapMarkers   = {};
+let proximityR   = 100;
+let playerLat    = null, playerLng = null;
+let scanner      = null;
+let lbInterval   = null;
+let geoWatch     = null;
+
+// ── Startup ──────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Check if URL has ?found=ID (QR scan from native camera)
+  const params  = new URLSearchParams(location.search);
+  const foundId = params.get('found');
+
+  if (myPseudo) {
+    document.getElementById('pseudoScreen').style.display = 'none';
+    initGame(foundId);
+  } else if (foundId) {
+    // Show pseudo screen but remember the found ID
+    sessionStorage.setItem('pendingFound', foundId);
+  }
+});
+
+// ── Register & start ─────────────────────────────────
+async function startGame() {
+  const input = document.getElementById('pseudoInput');
+  const err   = document.getElementById('pseudoErr');
+  const pseudo = input.value.trim().toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
+
+  if (pseudo.length < 2) { err.textContent = 'Pseudo trop court (min 2 caractères)'; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('startBtn').textContent = '⏳ Connexion…';
+
+  // Check/insert player
+  const { data: existing } = await db.from('players').select('pseudo,score,found_count').eq('pseudo', pseudo).single();
+  if (!existing) {
+    const { error } = await db.from('players').insert({ pseudo, joined_at: new Date().toISOString(), score: 0, found_count: 0 });
+    if (error && error.code !== '23505') { // ignore duplicate key
+      err.textContent = 'Erreur réseau : ' + error.message;
+      err.style.display = 'block';
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('startBtn').textContent = '🚀 Rejoindre le jeu';
+      return;
+    }
+  } else {
+    myScore      = existing.score      || 0;
+    myFoundCount = existing.found_count || 0;
+  }
+
+  myPseudo = pseudo;
+  localStorage.setItem('u3dq_pseudo', pseudo);
+  document.getElementById('pseudoScreen').style.display = 'none';
+
+  const pending = sessionStorage.getItem('pendingFound');
+  sessionStorage.removeItem('pendingFound');
+  initGame(pending);
+}
+
+// ── Init game ────────────────────────────────────────
+async function initGame(pendingFoundId) {
+  updateHeader();
+  document.getElementById('qrFab').style.display = 'flex';
+  document.getElementById('radarBar').style.display = 'block';
+
+  // Load config
+  const { data: cfg } = await db.from('config').select('*');
+  if (cfg) {
+    const c = Object.fromEntries(cfg.map(r => [r.key, r.value]));
+    if (c.proximityRadius) proximityR = Number(c.proximityRadius);
+    if (c.gameActive === 'false') showPause();
+  }
+
+  // Load treasures & init map
+  await loadTreasures();
+  initMap();
+  startGeoWatch();
+  startLbPolling();
+
+  // Clean URL & process pending QR
+  if (pendingFoundId) {
+    history.replaceState({}, '', location.pathname);
+    await processFindById(pendingFoundId);
+  }
+}
+
+function updateHeader() {
+  document.getElementById('headerPseudo').textContent = myPseudo;
+  document.getElementById('headerScore').textContent  = `${myFoundCount} 🏆`;
+}
+
+// ── Treasures ────────────────────────────────────────
+async function loadTreasures() {
+  const { data } = await db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
+  if (!data) return;
+  treasures = data;
+}
+
+// ── Map ──────────────────────────────────────────────
+function initMap() {
+  gameMap = L.map('gameMap', { zoomControl: true }).setView([48.85, 2.35], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(gameMap);
+  renderMarkers();
+}
+
+function renderMarkers() {
+  Object.values(mapMarkers).forEach(m => gameMap.removeLayer(m));
+  mapMarkers = {};
+
+  treasures.forEach(t => {
+    const isMine  = t.found_by && t.found_by.split(',').includes(myPseudo);
+    const isTaken = t.type === 'unique' && t.found_by && t.found_by.length > 0;
+    const color   = isMine ? '#4ade80' : isTaken ? '#475569' : (t.type === 'unique' ? '#c084fc' : '#60a5fa');
+    const opacity = isTaken && !isMine ? 0.4 : 1;
+
+    const icon = L.divIcon({
+      html: `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:${opacity}"></div>`,
+      className: '', iconSize: [16, 16], iconAnchor: [8, 8]
+    });
+
+    const popup = isTaken && !isMine
+      ? `<b>${t.label || '?'}</b><br>🔒 Déjà récupéré`
+      : `<b>${t.label || '?'}</b><br>${t.type === 'fixed' ? '📌 Fixe' : '🎁 Unique'}${t.hint ? '<br>💡 ' + t.hint : ''}`;
+
+    mapMarkers[t.id] = L.marker([t.lat, t.lng], { icon }).addTo(gameMap).bindPopup(popup);
+  });
+}
+
+// ── GPS watch ────────────────────────────────────────
+function startGeoWatch() {
+  if (!navigator.geolocation) return;
+  let playerMarker = null;
+  geoWatch = navigator.geolocation.watchPosition(pos => {
+    playerLat = pos.coords.latitude;
+    playerLng = pos.coords.longitude;
+
+    // Update player dot on map
+    if (!playerMarker) {
+      const icon = L.divIcon({
+        html: `<div style="background:#f59e0b;width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 4px rgba(245,158,11,.3)"></div>`,
+        className: '', iconSize: [12, 12], iconAnchor: [6, 6]
+      });
+      playerMarker = L.marker([playerLat, playerLng], { icon, zIndexOffset: 1000 }).addTo(gameMap);
+    } else {
+      playerMarker.setLatLng([playerLat, playerLng]);
+    }
+
+    updateRadar();
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000, toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function updateRadar() {
+  if (playerLat === null) return;
+  const bar = document.getElementById('radarBar');
+
+  const candidates = treasures.filter(t => {
+    if (t.type === 'unique' && t.found_by && t.found_by.length > 0) return false; // already taken
+    if (t.found_by && t.found_by.split(',').includes(myPseudo)) return false; // already found by me
+    return true;
+  });
+
+  if (!candidates.length) { bar.textContent = '✅ Tous les trésors trouvés !'; bar.className = 'radarBar'; return; }
+
+  let nearest = null, minDist = Infinity;
+  candidates.forEach(t => {
+    const d = haversine(playerLat, playerLng, t.lat, t.lng);
+    if (d < minDist) { minDist = d; nearest = t; }
+  });
+
+  const dist = Math.round(minDist);
+  if (dist > proximityR * 5) {
+    bar.textContent = `🧭 Trésor le plus proche : ${dist > 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m'}`;
+    bar.className = '';
+  } else if (dist > proximityR) {
+    bar.textContent = `🔥 Tu approches ! ${dist}m`;
+    bar.className = 'near';
+  } else {
+    bar.textContent = `⚡ Tu es là ! ${dist}m — scanne le QR !`;
+    bar.className = 'very-near';
+  }
+}
+
+// ── QR Scanner ───────────────────────────────────────
+function openScanner() {
+  document.getElementById('scanModal').classList.add('open');
+  if (!scanner) scanner = new Html5Qrcode('qrReader');
+  scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    async decodedText => {
+      closeScanner();
+      // Extract found ID from URL
+      try {
+        const url    = new URL(decodedText);
+        const foundId = url.searchParams.get('found');
+        if (foundId) await processFindById(foundId);
+        else alert('QR code non reconnu.');
+      } catch {
+        alert('QR code non reconnu.');
+      }
+    }
+  ).catch(e => console.warn('Scanner error', e));
+}
+
+function closeScanner() {
+  document.getElementById('scanModal').classList.remove('open');
+  if (scanner) scanner.stop().catch(() => {});
+}
+
+// ── Process find ─────────────────────────────────────
+async function processFindById(treasureId) {
+  // Fetch treasure fresh from DB
+  const { data: t, error } = await db.from('treasures').select('*').eq('id', treasureId).single();
+  if (error || !t) { alert('Trésor introuvable.'); return; }
+  if (!t.visible)   { alert('Ce trésor n\'est pas encore actif.'); return; }
+
+  // Check if already found by me
+  const foundList = (t.found_by || '').split(',').filter(Boolean);
+  if (foundList.includes(myPseudo)) { showFoundResult('already', t); return; }
+
+  // Unique: check if taken
+  if (t.type === 'unique' && foundList.length > 0) { showFoundResult('taken', t); return; }
+
+  // Calculate duration
+  const durationSec = Math.round((Date.now() - new Date(t.placed_at).getTime()) / 1000);
+
+  // Update treasure found_by
+  const newFoundBy = t.type === 'unique' ? myPseudo : [...foundList, myPseudo].join(',');
+  const updatePayload = { found_by: newFoundBy, found_at: new Date().toISOString() };
+  await db.from('treasures').update(updatePayload).eq('id', t.id);
+
+  // Log event
+  await db.from('events').insert({ pseudo: myPseudo, treasure_id: t.id, treasure_type: t.type, duration_sec: durationSec });
+
+  // Update player score
+  myScore      += durationSec;
+  myFoundCount += 1;
+  await db.from('players').update({ score: myScore, found_count: myFoundCount }).eq('pseudo', myPseudo);
+
+  // Refresh local treasures
+  await loadTreasures();
+  renderMarkers();
+  updateHeader();
+  updateRadar();
+
+  showFoundResult('success', t, durationSec);
+}
+
+function showFoundResult(status, t, durationSec) {
+  const modal = document.getElementById('foundModal');
+  const emoji = document.getElementById('foundEmoji');
+  const title = document.getElementById('foundTitle');
+  const dur   = document.getElementById('foundDuration');
+  const desc  = document.getElementById('foundDesc');
+
+  if (status === 'success') {
+    emoji.textContent = t.type === 'unique' ? '🎁' : '✅';
+    title.textContent = `"${t.label || 'Trésor'}" trouvé !`;
+    dur.textContent   = formatDuration(durationSec);
+    desc.textContent  = t.type === 'unique'
+      ? 'Bravo ! Tu es le premier à l\'avoir récupéré.'
+      : `Flashé ! Ce trésor reste en place pour les autres.`;
+  } else if (status === 'already') {
+    emoji.textContent = '🔄';
+    title.textContent = 'Déjà trouvé !';
+    dur.textContent   = '';
+    desc.textContent  = 'Tu as déjà scanné ce trésor.';
+  } else {
+    emoji.textContent = '🔒';
+    title.textContent = 'Trop tard !';
+    dur.textContent   = '';
+    desc.textContent  = 'Ce trésor unique a déjà été récupéré par quelqu\'un d\'autre.';
+  }
+  modal.classList.add('open');
+}
+
+function closeFound() { document.getElementById('foundModal').classList.remove('open'); }
+
+function formatDuration(sec) {
+  if (sec < 60)   return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec/60)}min ${sec%60}s`;
+  return `${Math.floor(sec/3600)}h ${Math.floor((sec%3600)/60)}min`;
+}
+
+// ── Leaderboard ──────────────────────────────────────
+async function loadLeaderboard() {
+  const { data } = await db.from('players').select('pseudo,found_count,score').order('found_count', { ascending: false }).limit(50);
+  if (!data) return;
+  // Sort: most found desc, then lowest score (duration) asc
+  data.sort((a, b) => b.found_count !== a.found_count ? b.found_count - a.found_count : a.score - b.score);
+
+  const medals = ['🥇', '🥈', '🥉'];
+  const ranks  = ['gold', 'silver', 'bronze'];
+  document.getElementById('lbList').innerHTML = data.length ? data.map((p, i) => `
+    <div class="lb-row">
+      <div class="lb-rank ${ranks[i] || ''}">${medals[i] || (i+1)}</div>
+      <div class="lb-name ${p.pseudo === myPseudo ? 'me' : ''}">${p.pseudo}${p.pseudo === myPseudo ? ' 👈' : ''}</div>
+      <div class="lb-stats"><strong>${p.found_count} trouvés</strong>${formatDuration(p.score || 0)} total</div>
+    </div>`).join('')
+    : '<p style="color:#475569;text-align:center;padding:40px">Aucun joueur encore</p>';
+  document.getElementById('lbRefresh').textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function startLbPolling() {
+  loadLeaderboard();
+  lbInterval = setInterval(loadLeaderboard, 10000);
+}
+
+// ── Tabs ─────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'map') setTimeout(() => gameMap && gameMap.invalidateSize(), 60);
+}
+
+// ── Pause ────────────────────────────────────────────
+function showPause() { document.getElementById('pauseScreen').classList.add('open'); }
+
+// ── Periodic refresh (treasures + config) ────────────
+setInterval(async () => {
+  if (!myPseudo) return;
+  const { data: cfg } = await db.from('config').select('*');
+  if (cfg) {
+    const c = Object.fromEntries(cfg.map(r => [r.key, r.value]));
+    if (c.gameActive === 'false') showPause();
+    else document.getElementById('pauseScreen').classList.remove('open');
+    if (c.proximityRadius) proximityR = Number(c.proximityRadius);
+  }
+  await loadTreasures();
+  renderMarkers();
+  updateRadar();
+}, 15000);
+</script>
+</body>
+</html>
