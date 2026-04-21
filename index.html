@@ -84,8 +84,8 @@
     <div class="ps-title">Urban3DQuest</div>
     <p class="ps-sub">Chasse au trésor urbaine<br>Entre ton pseudo pour rejoindre</p>
     <input type="text" id="pseudoInput" placeholder="TON PSEUDO" maxlength="20" autocomplete="off" autocapitalize="characters">
-    <div id="gameCodeWrap" style="display:none">
-      <input type="text" id="gameCodeInput" placeholder="CODE D'ACCÈS" maxlength="20" autocomplete="off" autocapitalize="characters" style="margin-top:0;border-color:#7c3aed">
+    <div id="gameCodeWrap" style="display:none;margin-bottom:12px">
+      <input type="text" id="gameCodeInput" placeholder="CODE D'ACCÈS" maxlength="20" autocomplete="off" autocapitalize="characters" style="border-color:#7c3aed;margin-bottom:0">
     </div>
     <p id="pseudoErr" style="color:#f87171;font-size:0.78rem;margin-bottom:10px;display:none"></p>
     <button class="btn-main" id="startBtn" onclick="startGame()">🚀 Rejoindre le jeu</button>
@@ -129,6 +129,7 @@
 <!-- ── Found modal ───────────────────────────────────── -->
 <div id="foundModal">
   <div class="found-box">
+    <img id="foundPhoto" style="width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin-bottom:12px;display:none">
     <div class="found-emoji" id="foundEmoji">🎉</div>
     <h2 id="foundTitle">Trésor trouvé !</h2>
     <div class="duration" id="foundDuration"></div>
@@ -187,27 +188,27 @@ window.addEventListener('load', async () => {
     }
   }
 
-  // Init background map on landing
+  const params  = new URLSearchParams(location.search);
+  const foundId = params.get('found');
+
+  // Returning user: skip landing + bgMap entirely
+  if (myPseudo) {
+    document.getElementById('pseudoScreen').style.display = 'none';
+    document.getElementById('bgMap').style.display = 'none';
+    initGame(foundId);
+    return;
+  }
+
+  // New user: show animated landing with bgMap
+  if (foundId) sessionStorage.setItem('pendingFound', foundId);
+
   bgMap = L.map('bgMap', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false, keyboard: false });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(bgMap);
   bgMap.setView(mapCenter, 14);
-  // Try to center on user
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
       bgMap && bgMap.setView([pos.coords.latitude, pos.coords.longitude], 15);
     }, () => {}, { timeout: 5000 });
-  }
-
-  // Check if URL has ?found=ID (QR scan from native camera)
-  const params  = new URLSearchParams(location.search);
-  const foundId = params.get('found');
-
-  if (myPseudo) {
-    hideLanding();
-    initGame(foundId);
-  } else if (foundId) {
-    // Show pseudo screen but remember the found ID
-    sessionStorage.setItem('pendingFound', foundId);
   }
 });
 
@@ -336,16 +337,16 @@ function renderMarkers() {
     mapMarkers[t.id] = L.marker([t.lat, t.lng], { icon }).addTo(gameMap).bindPopup(popup);
   });
 }
-
-// ── GPS watch ────────────────────────────────────────
 function startGeoWatch() {
-  if (!navigator.geolocation) return;
+  if (!navigator.geolocation) {
+    document.getElementById('radarBar').textContent = '📍 GPS non disponible sur cet appareil';
+    return;
+  }
   let playerMarker = null;
   geoWatch = navigator.geolocation.watchPosition(pos => {
     playerLat = pos.coords.latitude;
     playerLng = pos.coords.longitude;
 
-    // Update player dot on map
     if (!playerMarker) {
       const icon = L.divIcon({
         html: `<div style="background:#f59e0b;width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 4px rgba(245,158,11,.3)"></div>`,
@@ -357,7 +358,12 @@ function startGeoWatch() {
     }
 
     updateRadar();
-  }, () => {}, { enableHighAccuracy: true, maximumAge: 5000 });
+  }, err => {
+    const msgs = { 1: 'Permission GPS refusée', 2: 'GPS indisponible', 3: 'Délai GPS dépassé' };
+    const bar = document.getElementById('radarBar');
+    bar.textContent = '📍 ' + (msgs[err.code] || 'Erreur GPS') + ' — active la localisation';
+    bar.className = '';
+  }, { enableHighAccuracy: true, maximumAge: 5000 });
 }
 
 function haversine(lat1, lng1, lat2, lng2) {
@@ -377,7 +383,7 @@ function updateRadar() {
     return true;
   });
 
-  if (!candidates.length) { bar.textContent = '✅ Tous les trésors trouvés !'; bar.className = 'radarBar'; return; }
+  if (!candidates.length) { bar.textContent = '✅ Tous les trésors trouvés !'; bar.className = ''; return; }
 
   let nearest = null, minDist = Infinity;
   candidates.forEach(t => {
@@ -463,6 +469,9 @@ async function processFindById(treasureId) {
   updateHeader();
   updateRadar();
 
+  // Haptic feedback
+  if (navigator.vibrate) navigator.vibrate([80, 40, 160]);
+
   showFoundResult('success', t, durationSec);
 }
 
@@ -472,6 +481,15 @@ function showFoundResult(status, t, durationSec) {
   const title = document.getElementById('foundTitle');
   const dur   = document.getElementById('foundDuration');
   const desc  = document.getElementById('foundDesc');
+  const photo = document.getElementById('foundPhoto');
+
+  // Show photo if available and found
+  if (status === 'success' && t.photo_url) {
+    photo.src = t.photo_url;
+    photo.style.display = 'block';
+  } else {
+    photo.style.display = 'none';
+  }
 
   if (status === 'success') {
     emoji.textContent = t.type === 'unique' ? '🎁' : '✅';
@@ -479,7 +497,7 @@ function showFoundResult(status, t, durationSec) {
     dur.textContent   = formatDuration(durationSec);
     desc.textContent  = t.type === 'unique'
       ? 'Bravo ! Tu es le premier à l\'avoir récupéré.'
-      : `Flashé ! Ce trésor reste en place pour les autres.`;
+      : 'Flashé ! Ce trésor reste en place pour les autres.';
   } else if (status === 'already') {
     emoji.textContent = '🔄';
     title.textContent = 'Déjà trouvé !';
