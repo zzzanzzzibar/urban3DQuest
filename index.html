@@ -332,9 +332,9 @@ function renderMarkers() {
 
     const popup = isTaken && !isMine
       ? `<b>${t.label || '?'}</b><br>🔒 Déjà récupéré`
-      : `<b>${t.label || '?'}</b><br>${t.type === 'fixed' ? '📌 Fixe' : '🎁 Unique'}${t.hint ? '<br>💡 ' + t.hint : ''}`;
+      : `<div style="min-width:150px">${t.photo_url ? `<img src="${t.photo_url}" style="width:100%;max-height:100px;object-fit:cover;border-radius:6px;margin-bottom:5px;display:block">` : ''}<b>${t.label || '?'}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Fixe — tout le monde peut trouver' : '🎁 Unique — premier arrivé'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${t.hint}</span>` : ''}</div>`;
 
-    mapMarkers[t.id] = L.marker([t.lat, t.lng], { icon }).addTo(gameMap).bindPopup(popup);
+    mapMarkers[t.id] = L.marker([t.lat, t.lng], { icon }).addTo(gameMap).bindPopup(popup, { maxWidth: 220 });
   });
 }
 function startGeoWatch() {
