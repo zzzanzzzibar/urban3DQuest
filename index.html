@@ -130,6 +130,7 @@
 <div id="foundModal">
   <div class="found-box">
     <img id="foundPhoto" style="width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin-bottom:12px;display:none">
+    <div id="foundPhotoStrip" style="display:none;margin-bottom:12px"></div>
     <div class="found-emoji" id="foundEmoji">🎉</div>
     <h2 id="foundTitle">Trésor trouvé !</h2>
     <div class="duration" id="foundDuration"></div>
@@ -320,6 +321,8 @@ function initMap() {
   }
 }
 
+function getPhotoUrls(raw){if(!raw)return[];if(raw.charAt(0)==='['){try{return JSON.parse(raw).filter(Boolean);}catch(e){}}return[raw];}
+
 function renderMarkers() {
   Object.values(mapMarkers).forEach(m => gameMap.removeLayer(m));
   mapMarkers = {};
@@ -337,7 +340,7 @@ function renderMarkers() {
 
     const popup = isTaken && !isMine
       ? `<b>${t.label || '?'}</b><br>🔒 Déjà récupéré`
-      : `<div style="min-width:150px">${t.photo_url ? `<img src="${t.photo_url}" style="width:100%;max-height:100px;object-fit:cover;border-radius:6px;margin-bottom:5px;display:block">` : ''}<b>${t.label || '?'}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Balise fixe' : '🎁 Balise unique'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${t.hint}</span>` : ''}</div>`;
+      : (() => { const ph = getPhotoUrls(t.photo_url).map(u => `<img src="${u}" style="width:100%;max-height:90px;object-fit:cover;border-radius:5px;margin-bottom:3px;display:block">`).join(''); return `<div style="min-width:150px">${ph}<b>${t.label || '?'}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Balise fixe' : '🎁 Balise unique'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${t.hint}</span>` : ''}</div>`; })();
 
     mapMarkers[t.id] = L.marker([t.lat, t.lng], { icon }).addTo(gameMap).bindPopup(popup, { maxWidth: 220 });
   });
@@ -357,9 +360,14 @@ function startGeoWatch() {
         html: `<div style="background:#f59e0b;width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 4px rgba(245,158,11,.3)"></div>`,
         className: '', iconSize: [12, 12], iconAnchor: [6, 6]
       });
-      playerMarker = L.marker([playerLat, playerLng], { icon, zIndexOffset: 1000 }).addTo(gameMap);
+      // Round to ~10m for marker display (privacy + game design)
+      const rLat = Math.round(playerLat * 10000) / 10000;
+      const rLng = Math.round(playerLng * 10000) / 10000;
+      playerMarker = L.marker([rLat, rLng], { icon, zIndexOffset: 1000 }).addTo(gameMap);
     } else {
-      playerMarker.setLatLng([playerLat, playerLng]);
+      const rLat = Math.round(playerLat * 10000) / 10000;
+      const rLng = Math.round(playerLng * 10000) / 10000;
+      playerMarker.setLatLng([rLat, rLng]);
     }
 
     updateRadar();
@@ -376,6 +384,16 @@ function haversine(lat1, lng1, lat2, lng2) {
   const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distLabel(d) {
+  if (d < 10)   return 'moins de 10m';
+  if (d < 50)   return 'moins de 50m';
+  if (d < 100)  return 'moins de 100m';
+  if (d < 200)  return 'moins de 200m';
+  if (d < 500)  return 'moins de 500m';
+  if (d < 1000) return 'moins de 1km';
+  return 'environ ' + (d / 1000).toFixed(1) + 'km';
 }
 
 function updateRadar() {
@@ -397,14 +415,15 @@ function updateRadar() {
   });
 
   const dist = Math.round(minDist);
+  const label = distLabel(dist);
   if (dist > proximityR * 5) {
-    bar.textContent = `🧭 Trésor le plus proche : ${dist > 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m'}`;
+    bar.textContent = `🧭 Trésor le plus proche : ${label}`;
     bar.className = '';
   } else if (dist > proximityR) {
-    bar.textContent = `🔥 Tu approches ! ${dist}m`;
+    bar.textContent = `🔥 Tu approches ! ${label}`;
     bar.className = 'near';
   } else {
-    bar.textContent = `⚡ Tu es là ! ${dist}m — scanne le QR !`;
+    bar.textContent = `⚡ Tu y es ! ${label} — scanne le QR !`;
     bar.className = 'very-near';
   }
 }
@@ -486,15 +505,18 @@ function showFoundResult(status, t, durationSec) {
   const title = document.getElementById('foundTitle');
   const dur   = document.getElementById('foundDuration');
   const desc  = document.getElementById('foundDesc');
-  const photo = document.getElementById('foundPhoto');
 
-  // Show photo if available and found
-  if (status === 'success' && t.photo_url) {
-    photo.src = t.photo_url;
-    photo.style.display = 'block';
-  } else {
-    photo.style.display = 'none';
-  }
+  // Show photos if available and found
+  const photoStrip = document.getElementById('foundPhotoStrip');
+  const photoSingle = document.getElementById('foundPhoto');
+  photoSingle.style.display = 'none';
+  if (status === 'success') {
+    const photos = getPhotoUrls(t.photo_url);
+    if (photos.length) {
+      photoStrip.innerHTML = photos.map(url => `<img src="${url}" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-bottom:6px;display:block">`).join('');
+      photoStrip.style.display = 'block';
+    } else { photoStrip.style.display = 'none'; }
+  } else { photoStrip.style.display = 'none'; }
 
   if (status === 'success') {
     emoji.textContent = t.type === 'unique' ? '🎁' : '✅';
