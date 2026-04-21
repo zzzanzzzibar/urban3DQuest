@@ -313,6 +313,11 @@ function initMap() {
   gameMap = L.map('gameMap', { zoomControl: true }).setView(mapCenter, 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(gameMap);
   renderMarkers();
+  // Zoom to show all treasures on first load
+  if (treasures.length) {
+    const bounds = treasures.map(t => [t.lat, t.lng]);
+    gameMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
+  }
 }
 
 function renderMarkers() {

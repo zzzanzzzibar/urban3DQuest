@@ -214,7 +214,7 @@
     </div>
   </div>
   <button class="btn" onclick="generateQRCodes()">⚡ Générer</button>
-  <button class="btn" id="printBtn" style="background:#1e293b;border:1px solid #334155;display:none" onclick="window.print()">🖨 Imprimer (10×15 cm · grille 5×6)</button>
+  <button class="btn" id="zipBtn" style="background:#1e293b;border:1px solid #334155;display:none" onclick="downloadQrZip()">⬇ Télécharger ZIP (PNG 400px · Photoshop)</button>
   <p id="qrInfo" style="font-size:0.75rem;color:#475569;margin-bottom:12px;display:none"></p>
   <div id="qrGrid" class="qr-grid"></div>
 </div>
@@ -233,6 +233,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 var SUPABASE_URL='https://jocfvobqfpygixrawnbq.supabase.co';
 var SUPABASE_KEY='sb_publishable_M8SxhXrmh17vrOf1WlOM6Q_ZNKNqQhM';
@@ -294,12 +295,13 @@ function generateQRCodes(){
     new QRCode(document.getElementById(pid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
   }
   var info=document.getElementById('qrInfo');
-  info.textContent=count+' codes generés ('+sheets+' page'+(sheets>1?'s':'')+' 10×15 cm) — préfixe '+prefix+'-'+String(start).padStart(3,'0')+' → '+prefix+'-'+String(start+count-1).padStart(3,'0');
+  info.textContent=count+' codes générés — préfixe '+prefix+'-'+String(start).padStart(3,'0')+' → '+prefix+'-'+String(start+count-1).padStart(3,'0')+' · Télécharge le ZIP puis place dans Photoshop';
   info.style.display='block';
-  document.getElementById('printBtn').style.display='block';
+  document.getElementById('zipBtn').style.display='block';
   localStorage.setItem('u3dq_qr_generated', JSON.stringify(generatedIds));
 }
-async function loadQrLov(){var generated=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var available=generated.filter(function(id){return!used.has(id);});available.forEach(function(id){var opt=document.createElement('option');opt.value=id;opt.textContent=id;sel.appendChild(opt);});var total=generated.length;info.textContent=available.length+' QR disponibles sur '+total+' générés'+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';}
+async function downloadQrZip(){var btn=document.getElementById('zipBtn');var ids=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');if(!ids.length){alert('Générez d\'abord les QR codes.');return;}btn.disabled=true;btn.textContent='⏳ Création du ZIP ('+ids.length+' fichiers)…';var zip=new JSZip();var tmp=document.createElement('div');tmp.style.cssText='position:fixed;left:-9999px;top:0;visibility:hidden';document.body.appendChild(tmp);ids.forEach(function(id){var url=GAME_BASE_URL+'/?found='+id;var wrap=document.createElement('div');tmp.appendChild(wrap);new QRCode(wrap,{text:url,width:400,height:400,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});var canvas=wrap.querySelector('canvas');if(canvas){zip.file(id+'.png',canvas.toDataURL('image/png').split(',')[1],{base64:true});}tmp.removeChild(wrap);});document.body.removeChild(tmp);var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='urban3dquest_qrcodes.zip';document.body.appendChild(a);a.click();document.body.removeChild(a);btn.disabled=false;btn.textContent='⬇ Télécharger ZIP (PNG 400px · Photoshop)';}
+async function loadQrLov(){var generated=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var available=generated.filter(function(id){return!used.has(id);});available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id;sel.appendChild(opt);});var total=generated.length;info.textContent=available.length+' QR disponibles sur '+total+' générés'+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
 function onQrSelectChange(){var v=document.getElementById('fQrSelect').value;var inp=document.getElementById('fQrNum');if(v==='__manual__'){inp.style.display='block';inp.focus();}else{inp.style.display='none';inp.value=v;}}
 function showQR(id,label){var url=GAME_BASE_URL+'/?found='+id;document.getElementById('qrLabel').textContent=label||'Tresor';document.getElementById('qrId').textContent=id;document.getElementById('qrUrl').textContent=url;var wrap=document.getElementById('qrWrap');wrap.innerHTML='';new QRCode(wrap,{text:url,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});document.getElementById('qrModal').classList.add('open');}
 function closeQR(){document.getElementById('qrModal').classList.remove('open');}
