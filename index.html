@@ -34,13 +34,19 @@
     .panel{display:none}
     .panel.active{display:block}
     /* ── Map ── */
-    #gameMap{height:calc(100vh - 98px)}
+    #gameMap{height:calc(100vh - 98px - 42px)}
     /* ── Radar bar ── */
-    #radarBar{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(30,41,59,.95);border:1px solid #334155;border-radius:24px;padding:8px 20px;font-size:0.82rem;color:#94a3b8;z-index:200;display:none;white-space:nowrap;backdrop-filter:blur(8px)}
+    #radarBar{position:fixed;bottom:calc(42px + 12px);left:50%;transform:translateX(-50%);background:rgba(30,41,59,.95);border:1px solid #334155;border-radius:24px;padding:8px 20px;font-size:0.82rem;color:#94a3b8;z-index:200;display:none;white-space:nowrap;backdrop-filter:blur(8px)}
     #radarBar.near{color:#fbbf24;border-color:#d97706;background:rgba(69,26,3,.95)}
     #radarBar.very-near{color:#4ade80;border-color:#16a34a;background:rgba(5,46,22,.95);animation:pulse 1s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
     /* ── QR FAB supprimé — scan natif caméra Android/iOS ── */
+    /* ── Progress bar ── */
+    #progressBar{position:fixed;bottom:0;left:0;right:0;background:#1e293b;border-top:1px solid #334155;padding:6px 16px 8px;z-index:200;display:none}
+    #progressBar .pb-label{display:flex;justify-content:space-between;font-size:0.72rem;color:#64748b;margin-bottom:5px}
+    #progressBar .pb-label strong{color:#f1f5f9}
+    #progressBar .pb-track{height:10px;background:#0f172a;border-radius:6px;overflow:hidden;border:1px solid #334155}
+    #progressBar .pb-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#6366f1);border-radius:6px;transition:width .5s ease;min-width:0}
     /* ── Leaderboard ── */
     #panelScores{height:calc(100vh - 98px);overflow-y:auto;padding:16px;max-width:600px;margin:0 auto}
     .lb-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#1e293b;border-radius:10px;margin-bottom:8px}
@@ -112,6 +118,15 @@
 <!-- ── Radar bar ─────────────────────────────────────── -->
 <div id="radarBar"></div>
 
+<!-- ── Progress bar ──────────────────────────────────── -->
+<div id="progressBar">
+  <div class="pb-label">
+    <span>🎯 Balises fixes trouvées</span>
+    <strong id="pbCount">0 / 5</strong>
+  </div>
+  <div class="pb-track"><div class="pb-fill" id="pbFill" style="width:0%"></div></div>
+</div>
+
 <!-- ── Found modal ───────────────────────────────────── -->
 <div id="foundModal">
   <div class="found-box">
@@ -149,6 +164,7 @@ let gameMap      = null;
 let treasures    = [];
 let mapMarkers   = {};
 let proximityR   = 100;
+let fixedTotal   = 5;   // total fixed beacons, overridden by config key 'fixedTotal'
 let mapCenter    = [48.8566, 2.3522]; // default Paris, overridden by config
 let gameStart    = null;  // Date or null — reference timestamp for score calc
 let gameCode     = '';    // empty = open access
@@ -258,6 +274,7 @@ async function initGame(pendingFoundId) {
   if (cfg) {
     const c = Object.fromEntries(cfg.map(r => [r.key, r.value]));
     if (c.proximityRadius) proximityR = Number(c.proximityRadius);
+    if (c.fixedTotal)      fixedTotal  = Number(c.fixedTotal);
     if (c.gameActive === 'false') showPause();
     if (c.mapCenter) {
       const parts = c.mapCenter.split(',').map(Number);
@@ -274,6 +291,7 @@ async function initGame(pendingFoundId) {
   initMap();
   startGeoWatch();
   startLbPolling();
+  updateProgressBar();
 
   // Clean URL & process pending QR
   if (pendingFoundId) {
@@ -413,6 +431,25 @@ function updateRadar() {
   }
 }
 
+// ── Progress bar ─────────────────────────────────────
+function updateProgressBar() {
+  const bar = document.getElementById('progressBar');
+  if (!myPseudo) return;
+  bar.style.display = 'block';
+  const myFixedFound = treasures.filter(t =>
+    t.type === 'fixed' &&
+    t.found_by && t.found_by.split(',').includes(myPseudo)
+  ).length;
+  const pct = fixedTotal > 0 ? Math.min(100, Math.round(myFixedFound / fixedTotal * 100)) : 0;
+  document.getElementById('pbCount').textContent = myFixedFound + ' / ' + fixedTotal;
+  document.getElementById('pbFill').style.width = pct + '%';
+  // Color: green when complete
+  document.getElementById('pbFill').style.background =
+    myFixedFound >= fixedTotal
+      ? 'linear-gradient(90deg,#22c55e,#4ade80)'
+      : 'linear-gradient(90deg,#3b82f6,#6366f1)';
+}
+
 // ── QR Scanner ───────────────────────────────────────
 // Scan natif : le joueur utilise la caméra de son téléphone (Android/iOS).
 // Les QR codes encodent une URL complète (?found=ID) qui est détectée au chargement.
@@ -455,6 +492,7 @@ async function processFindById(treasureId) {
   renderMarkers();
   updateHeader();
   updateRadar();
+  updateProgressBar();
 
   // Haptic feedback
   if (navigator.vibrate) navigator.vibrate([80, 40, 160]);
@@ -560,6 +598,7 @@ setInterval(async () => {
   await loadTreasures();
   renderMarkers();
   updateRadar();
+  updateProgressBar();
 }, 15000);
 </script>
 </body>
