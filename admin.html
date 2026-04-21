@@ -65,18 +65,21 @@
     .modal-sub{font-size:0.72rem;color:#64748b;margin-bottom:16px;word-break:break-all}
     #qrWrap{display:flex;justify-content:center;background:#fff;padding:12px;border-radius:10px;margin-bottom:12px}
     .qr-url{font-size:0.68rem;color:#475569;margin-bottom:14px;word-break:break-all}
-    .qr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:4px}
-    .qr-card{background:#1e293b;border-radius:10px;padding:14px;text-align:center}
-    .qr-card-id{font-size:0.85rem;font-weight:700;margin-bottom:8px;color:#93c5fd;letter-spacing:.04em}
-    .qr-card-url{font-size:0.6rem;color:#475569;margin-top:6px;word-break:break-all}
+    /* ── QR screen preview ── */
+    .qr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
+    .qr-card{background:#1e293b;border-radius:10px;padding:10px;text-align:center}
+    .qr-card-id{font-size:0.72rem;font-weight:700;margin-bottom:6px;color:#93c5fd;letter-spacing:.04em;font-family:monospace}
+    .qr-card canvas,.qr-card img{width:80px!important;height:80px!important}
+    /* ── Print sheet (hidden on screen) ── */
+    #printSheet{display:none}
     @media print{
-      #pwScreen,header,nav,#panelAdd,#panelList,#panelMap,#panelCfg,.btn-print-ctrl,#qrModal{display:none!important}
-      #panelQr{display:block!important;padding:0}
-      .qr-grid{grid-template-columns:repeat(2,1fr);gap:8px}
-      .qr-card{border:1px solid #ccc;break-inside:avoid;background:#fff;color:#000}
-      .qr-card-id{color:#1d4ed8}
-      .qr-card-url{color:#666}
-      body{background:#fff;color:#000}
+      @page{size:10cm 15cm;margin:4mm}
+      body>*{display:none!important}
+      #printSheet{display:block!important}
+      .print-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1mm;width:100%}
+      .print-cell{display:flex;flex-direction:column;align-items:center;break-inside:avoid;padding:0.3mm 0}
+      .print-cell canvas,.print-cell img{width:1.2cm!important;height:1.2cm!important;display:block!important;image-rendering:crisp-edges}
+      .print-label{font-size:4.5pt;font-family:'Courier New',monospace;font-weight:700;color:#000;margin-top:0.4mm;text-align:center;line-height:1;white-space:nowrap}
     }
   </style>
 </head>
@@ -159,20 +162,26 @@
 <div id="panelQr" class="panel">
   <div class="field">
     <label>Préfixe</label>
-    <input type="text" id="qrPrefix" value="QR" maxlength="8" style="text-transform:uppercase">
+    <input type="text" id="qrPrefix" value="QR" maxlength="6" style="text-transform:uppercase">
   </div>
-  <div class="field">
-    <label>Nombre de codes</label>
-    <input type="number" id="qrCount" value="10" min="1" max="50">
+  <div style="display:flex;gap:8px">
+    <div class="field" style="flex:1">
+      <label>Nombre de codes</label>
+      <input type="number" id="qrCount" value="30" min="1" max="150">
+    </div>
+    <div class="field" style="flex:1">
+      <label>Numéro de départ</label>
+      <input type="number" id="qrStart" value="1" min="1">
+    </div>
   </div>
-  <div class="field">
-    <label>Numéro de départ</label>
-    <input type="number" id="qrStart" value="1" min="1">
-  </div>
-  <button class="btn" onclick="generateQRCodes()">⚡ Générer les QR codes</button>
-  <button class="btn btn-print-ctrl" style="background:#1e293b;border:1px solid #334155;margin-bottom:20px" onclick="window.print()">🖨 Imprimer</button>
+  <button class="btn" onclick="generateQRCodes()">⚡ Générer</button>
+  <button class="btn" id="printBtn" style="background:#1e293b;border:1px solid #334155;display:none" onclick="window.print()">🖨 Imprimer (10×15 cm · grille 5×6)</button>
+  <p id="qrInfo" style="font-size:0.75rem;color:#475569;margin-bottom:12px;display:none"></p>
   <div id="qrGrid" class="qr-grid"></div>
 </div>
+<!-- Print sheet: hidden on screen, shown on print -->
+<div id="printSheet"><div class="print-grid" id="printGrid"></div></div>
+
 <div class="modal" id="qrModal" onclick="if(event.target===this)closeQR()">
   <div class="modal-box">
     <h2 id="qrLabel">Tresor</h2>
@@ -210,7 +219,39 @@ async function loadConfig(){var res=await db.from('config').select('*');if(!res.
 function toggleGame(){gameActive=!gameActive;document.getElementById('gameToggle').classList.toggle('on',gameActive);document.getElementById('gameLabel').textContent=gameActive?'Jeu actif':'Jeu en pause';}
 async function saveConfig(){var st=document.getElementById('stCfg');await db.from('config').upsert({key:'proximityRadius',value:document.getElementById('cfgRadius').value});await db.from('config').upsert({key:'gameActive',value:String(gameActive)});showStatus(st,'ok','Config sauvegardee');}
 async function loadStats(){var r1=await db.from('treasures').select('id,type,found_by');var r2=await db.from('players').select('pseudo,found_count');var t=r1.data||[];var p=r2.data||[];document.getElementById('statsDiv').innerHTML='<div class="stat-row"><span>Tresors fixes</span><span>'+t.filter(function(x){return x.type==='fixed';}).length+'</span></div><div class="stat-row"><span>Tresors uniques</span><span>'+t.filter(function(x){return x.type==='unique';}).length+'</span></div><div class="stat-row"><span>Joueurs</span><span>'+p.length+'</span></div>';}
-function generateQRCodes(){var prefix=(document.getElementById('qrPrefix').value||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');var count=Math.min(parseInt(document.getElementById('qrCount').value)||10,50);var start=parseInt(document.getElementById('qrStart').value)||1;var grid=document.getElementById('qrGrid');grid.innerHTML='';for(var i=start;i<start+count;i++){var num=String(i).padStart(3,'0');var id=prefix+'-'+num;var url=GAME_BASE_URL+'/?found='+id;var card=document.createElement('div');card.className='qr-card';card.innerHTML='<div class="qr-card-id">'+id+'</div><div id="qrg_'+id.replace(/-/g,'_')+'"></div><div class="qr-card-url">'+url+'</div>';grid.appendChild(card);new QRCode(document.getElementById('qrg_'+id.replace(/-/g,'_')),{text:url,width:140,height:140,colorDark:'#000000',colorLight:'#ffffff'});}}
+function generateQRCodes(){
+  var prefix=(document.getElementById('qrPrefix').value||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  var count=Math.min(parseInt(document.getElementById('qrCount').value)||30,150);
+  var start=parseInt(document.getElementById('qrStart').value)||1;
+  var grid=document.getElementById('qrGrid');
+  var printGrid=document.getElementById('printGrid');
+  grid.innerHTML='';
+  printGrid.innerHTML='';
+  var sheets=Math.ceil(count/30);
+  for(var i=start;i<start+count;i++){
+    var num=String(i).padStart(3,'0');
+    var id=prefix+'-'+num;
+    var url=GAME_BASE_URL+'/?found='+id;
+    var sid='qrs_'+i;
+    var pid='qrp_'+i;
+    // Screen card
+    var card=document.createElement('div');
+    card.className='qr-card';
+    card.innerHTML='<div class="qr-card-id">'+id+'</div><div id="'+sid+'"></div>';
+    grid.appendChild(card);
+    new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
+    // Print cell
+    var cell=document.createElement('div');
+    cell.className='print-cell';
+    cell.innerHTML='<div id="'+pid+'"></div><div class="print-label">'+id+'</div>';
+    printGrid.appendChild(cell);
+    new QRCode(document.getElementById(pid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
+  }
+  var info=document.getElementById('qrInfo');
+  info.textContent=count+' codes generés ('+sheets+' page'+(sheets>1?'s':'')+' 10×15 cm) — préfixe '+prefix+'-'+String(start).padStart(3,'0')+' → '+prefix+'-'+String(start+count-1).padStart(3,'0');
+  info.style.display='block';
+  document.getElementById('printBtn').style.display='block';
+}
 function showQR(id,label){var url=GAME_BASE_URL+'/?found='+id;document.getElementById('qrLabel').textContent=label||'Tresor';document.getElementById('qrId').textContent=id;document.getElementById('qrUrl').textContent=url;var wrap=document.getElementById('qrWrap');wrap.innerHTML='';new QRCode(wrap,{text:url,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});document.getElementById('qrModal').classList.add('open');}
 function closeQR(){document.getElementById('qrModal').classList.remove('open');}
 function showStatus(el,type,msg){el.className='status '+type;el.textContent=msg;setTimeout(function(){el.className='status';},4000);}
