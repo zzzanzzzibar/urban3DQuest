@@ -41,6 +41,19 @@
     #radarBar.very-near{color:#4ade80;border-color:#16a34a;background:rgba(5,46,22,.95);animation:pulse 1s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
     /* ── QR FAB supprimé — scan natif caméra Android/iOS ── */
+    /* ── Compass panel ── */
+    #panelCompass{height:calc(100vh - 98px - 42px);overflow-y:auto;padding:16px;max-width:520px;margin:0 auto}
+    #compassStatus{text-align:center;font-size:0.78rem;color:#64748b;padding:10px 0 4px}
+    #compassPermBtn{display:none;width:100%;padding:14px;background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;border-radius:12px;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:14px}
+    .cmp-card{background:#1e293b;border-radius:16px;padding:16px 14px;margin-bottom:12px;display:flex;align-items:center;gap:14px;border:2px solid #334155;transition:border-color .4s}
+    .cmp-card.in-range{border-color:#22c55e;box-shadow:0 0 20px rgba(34,197,94,.25)}
+    .cmp-arrow-wrap{width:80px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+    .cmp-arrow-wrap svg{transition:transform .35s ease}
+    .cmp-info{flex:1;min-width:0}
+    .cmp-label{font-weight:700;font-size:1rem;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cmp-dist{font-size:0.82rem;color:#64748b;margin-bottom:6px}
+    .cmp-hint{font-size:0.74rem;color:#93c5fd;margin-bottom:8px}
+    .cmp-capture{width:100%;padding:10px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:10px;color:#fff;font-weight:700;cursor:pointer;font-size:0.9rem;box-shadow:0 2px 12px rgba(34,197,94,.4)}
     /* ── Capture FAB (balises fixes) ── */
     #captureFab{position:fixed;bottom:calc(42px + 14px);right:18px;padding:13px 20px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:16px;font-size:1rem;font-weight:700;color:#fff;cursor:pointer;z-index:1000;box-shadow:0 4px 20px rgba(34,197,94,.5);display:none;animation:pulse 1.2s infinite}
     /* ── Progress bar ── */
@@ -102,8 +115,9 @@
   <span class="score-chip" id="headerScore">0 🏆</span>
 </header>
 <nav>
-  <button class="active" onclick="showTab('map',this)">🗺 Carte</button>
-  <button onclick="showTab('scores',this)">🏆 Scores</button>
+  <button id="navMap" class="active" onclick="showTab('map',this)">🗺 Carte</button>
+  <button id="navCompass" style="display:none" onclick="showTab('compass',this)">🧭 Boussole</button>
+  <button id="navScores" onclick="showTab('scores',this)">🏆 Scores</button>
 </nav>
 
 <!-- ── Game Map ───────────────────────────────────────── -->
@@ -113,6 +127,13 @@
 
 <!-- ── Leaderboard ───────────────────────────────────── -->
 <div id="panelScores" class="panel">
+
+<!-- ── Boussole ──────────────────────────────────────── -->
+<div id="panelCompass" class="panel">
+  <button id="compassPermBtn" onclick="requestCompassPermission()">🧭 Activer le compas (iOS)</button>
+  <div id="compassStatus">GPS en cours…</div>
+  <div id="compassCards"></div>
+</div>
   <div id="lbList"><p style="color:#475569;text-align:center;padding:40px">Chargement…</p></div>
   <div class="lb-refresh" id="lbRefresh"></div>
 </div>
@@ -170,6 +191,11 @@ let treasures    = [];
 let mapMarkers   = {};
 let proximityR   = 100;
 let fixedTotal   = 5;   // total fixed beacons, overridden by config key 'fixedTotal'
+let modeMap      = true;  // show map tab
+let modeCompass  = true;  // show compass tab
+let activeTab    = 'map';
+let deviceHeading = null; // degrees clockwise from north (from device sensor)
+let compassInterval = null;
 let mapCenter    = [48.8566, 2.3522]; // default Paris, overridden by config
 let gameStart    = null;  // Date or null — reference timestamp for score calc
 let gameCode     = '';    // empty = open access
@@ -281,6 +307,8 @@ async function initGame(pendingFoundId) {
     const c = Object.fromEntries(cfg.map(r => [r.key, r.value]));
     if (c.proximityRadius) proximityR = Number(c.proximityRadius);
     if (c.fixedTotal)      fixedTotal  = Number(c.fixedTotal);
+    if (c.modeMap !== undefined)     modeMap     = c.modeMap !== 'false';
+    if (c.modeCompass !== undefined) modeCompass = c.modeCompass !== 'false';
     if (c.gameActive === 'false') showPause();
     if (c.mapCenter) {
       const parts = c.mapCenter.split(',').map(Number);
@@ -294,7 +322,20 @@ async function initGame(pendingFoundId) {
 
   // Load treasures & init map
   await loadTreasures();
-  initMap();
+
+  // Show / hide tabs based on config
+  document.getElementById('navMap').style.display     = modeMap     ? '' : 'none';
+  document.getElementById('navCompass').style.display = modeCompass ? '' : 'none';
+  // If map is off but compass is on, start on compass
+  if (!modeMap && modeCompass) {
+    showTab('compass', document.getElementById('navCompass'));
+  } else {
+    initMap();
+  }
+
+  // Start orientation sensor (Android = no permission; iOS = button shown)
+  startOrientationWatch();
+
   startGeoWatch();
   startLbPolling();
   updateProgressBar();
@@ -446,11 +487,11 @@ function updateRadar() {
     nearestFixed = null;
   } else {
     if (isFixed) {
-      // Fixed beacon: GPS capture, no QR needed
+      // Fixed beacon: GPS capture (only show FAB in map mode)
       bar.textContent = `📌 Balise fixe à portée ! (${label})`;
       bar.className = 'very-near';
       nearestFixed = nearest;
-      fab.style.display = 'block';
+      fab.style.display = activeTab === 'map' ? 'block' : 'none';
     } else {
       // Mobile/unique beacon: QR scan via native camera
       bar.textContent = `⚡ Tu y es ! ${label} — ouvre ta caméra et scanne le QR !`;
@@ -473,7 +514,52 @@ async function captureFixed() {
   fab.textContent = '📸 Capturer !';
 }
 
-// ── Progress bar ─────────────────────────────────────
+// ── Compass orientation ───────────────────────────────
+function bearingTo(lat1, lng1, lat2, lng2) {
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const lat1r = lat1 * Math.PI / 180, lat2r = lat2 * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2r);
+  const x = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function startOrientationWatch() {
+  // iOS 13+: needs explicit permission
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    document.getElementById('compassPermBtn').style.display = 'block';
+    return; // will start after user grants permission
+  }
+  _attachOrientationListeners();
+}
+
+async function requestCompassPermission() {
+  try {
+    const res = await DeviceOrientationEvent.requestPermission();
+    if (res === 'granted') {
+      document.getElementById('compassPermBtn').style.display = 'none';
+      _attachOrientationListeners();
+    } else {
+      alert('Permission compas refusée. Les flèches seront statiques (direction depuis le Nord).');
+    }
+  } catch(e) {
+    alert('Erreur permission compas : ' + e);
+  }
+}
+
+function _attachOrientationListeners() {
+  // Android Chrome: deviceorientationabsolute gives true north reference
+  window.addEventListener('deviceorientationabsolute', e => {
+    if (e.alpha !== null) deviceHeading = e.alpha;
+  }, true);
+  // iOS: webkitCompassHeading (clockwise from north, 0–360)
+  window.addEventListener('deviceorientation', e => {
+    if (typeof e.webkitCompassHeading === 'number') {
+      deviceHeading = e.webkitCompassHeading;
+    }
+  }, true);
+}
+
+
 function updateProgressBar() {
   const bar = document.getElementById('progressBar');
   if (!myPseudo) return;
@@ -495,6 +581,104 @@ function updateProgressBar() {
 // ── QR Scanner ───────────────────────────────────────
 // Scan natif : le joueur utilise la caméra de son téléphone (Android/iOS).
 // Les QR codes encodent une URL complète (?found=ID) qui est détectée au chargement.
+
+// ── Compass ───────────────────────────────────────────
+function startCompassInterval() {
+  if (compassInterval) return;
+  updateCompass();
+  compassInterval = setInterval(updateCompass, 700);
+}
+function stopCompassInterval() {
+  if (compassInterval) { clearInterval(compassInterval); compassInterval = null; }
+}
+
+function updateCompass() {
+  if (activeTab !== 'compass') return;
+  const status = document.getElementById('compassStatus');
+  const cards  = document.getElementById('compassCards');
+
+  if (playerLat === null) {
+    status.textContent = '📍 En attente du GPS…';
+    return;
+  }
+
+  // 3 nearest fixed beacons not found by me
+  const fixed = treasures
+    .filter(t => t.type === 'fixed' && !(t.found_by && t.found_by.split(',').includes(myPseudo)))
+    .map(t => ({ ...t, dist: haversine(playerLat, playerLng, t.lat, t.lng) }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 3);
+
+  const hasHeading = deviceHeading !== null;
+  status.textContent = hasHeading
+    ? '🧭 Boussole active — pointe vers les balises'
+    : '🧭 Compas non disponible — orientation depuis le Nord';
+
+  if (!fixed.length) {
+    cards.innerHTML = '<p style="text-align:center;color:#475569;padding:40px">✅ Toutes les balises fixes trouvées !</p>';
+    return;
+  }
+
+  // Rebuild only if needed (avoid flicker on rotation update)
+  if (cards.children.length !== fixed.length) {
+    cards.innerHTML = '';
+    fixed.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'cmp-card';
+      card.id = 'cmpcard-' + t.id;
+      card.innerHTML = `
+        <div class="cmp-arrow-wrap">
+          <svg id="cmp-arrow-${t.id}" width="80" height="80" viewBox="0 0 80 80">
+            <polygon points="40,5 56,60 40,50 24,60" fill="#3b82f6"/>
+            <circle cx="40" cy="38" r="7" fill="#0f172a" stroke="#3b82f6" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="cmp-info">
+          <div class="cmp-label">${t.label || t.id}</div>
+          <div class="cmp-dist" id="cmp-dist-${t.id}">${distLabel(Math.round(t.dist))}</div>
+          ${t.hint ? `<div class="cmp-hint">💡 ${t.hint}</div>` : ''}
+          <div id="cmp-btn-${t.id}"></div>
+        </div>`;
+      cards.appendChild(card);
+    });
+  }
+
+  // Update arrows + distances + capture buttons
+  fixed.forEach(t => {
+    const dist = Math.round(t.dist);
+    const bearing = bearingTo(playerLat, playerLng, t.lat, t.lng);
+    const rotation = hasHeading ? (bearing - deviceHeading + 360) % 360 : bearing;
+
+    const svg = document.getElementById('cmp-arrow-' + t.id);
+    if (svg) svg.style.transform = `rotate(${rotation}deg)`;
+
+    const distEl = document.getElementById('cmp-dist-' + t.id);
+    if (distEl) distEl.textContent = distLabel(dist);
+
+    const card = document.getElementById('cmpcard-' + t.id);
+    if (card) card.classList.toggle('in-range', dist <= proximityR);
+
+    // Arrow color: green when in range
+    const poly = svg && svg.querySelector('polygon');
+    if (poly) poly.setAttribute('fill', dist <= proximityR ? '#22c55e' : '#3b82f6');
+
+    const btnWrap = document.getElementById('cmp-btn-' + t.id);
+    if (btnWrap) {
+      if (dist <= proximityR) {
+        btnWrap.innerHTML = `<button class="cmp-capture" onclick="captureFixedById('${t.id}',this)">📸 Capturer !</button>`;
+      } else {
+        btnWrap.innerHTML = '';
+      }
+    }
+  });
+}
+
+async function captureFixedById(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  await processFindById(id);
+  updateCompass();
+}
+
 
 
 // ── Process find ─────────────────────────────────────
@@ -617,11 +801,22 @@ function startLbPolling() {
 
 // ── Tabs ─────────────────────────────────────────────
 function showTab(name, btn) {
+  activeTab = name;
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
-  btn.classList.add('active');
-  if (name === 'map') setTimeout(() => gameMap && gameMap.invalidateSize(), 60);
+  if (btn) btn.classList.add('active');
+  if (name === 'map') {
+    setTimeout(() => gameMap && gameMap.invalidateSize(), 60);
+    stopCompassInterval();
+    updateRadar(); // refresh captureFab visibility
+  } else if (name === 'compass') {
+    document.getElementById('captureFab').style.display = 'none'; // hide map FAB
+    startCompassInterval();
+  } else {
+    stopCompassInterval();
+    document.getElementById('captureFab').style.display = 'none';
+  }
 }
 
 // ── Pause ────────────────────────────────────────────
