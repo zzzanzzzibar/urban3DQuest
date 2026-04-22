@@ -356,15 +356,9 @@ function updateHeader() {
 
 // ── Treasures ────────────────────────────────────────
 async function loadTreasures() {
-  let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
+  let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at,quest').eq('visible', true);
   if (activeQuest) q = q.eq('quest', activeQuest);
-  const { data, error } = await q;
-  if (error) {
-    // fallback sans filtre quest si la colonne n'existe pas encore
-    const { data: data2 } = await db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
-    if (data2) treasures = data2;
-    return;
-  }
+  const { data } = await q;
   if (!data) return;
   treasures = data;
 }
