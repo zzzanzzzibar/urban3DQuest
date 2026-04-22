@@ -206,10 +206,20 @@ let activeQuest  = '';   // empty = all quests visible
 let gameStart    = null;  // Date or null — reference timestamp for score calc
 let gameCode     = '';    // empty = open access
 let playerLat    = null, playerLng = null;
+let playerAccuracy = null; // GPS accuracy in meters
+let gpsHistory   = []; // last N positions for smoothing
 let scanner      = null; // unused, kept for compat
 let nearestFixed = null; // fixed beacon currently in capture range
 let lbInterval   = null;
 let geoWatch     = null;
+let lastHapticZone = null; // track last haptic zone to avoid repeat vibrations
+
+// ── Device token for pseudo ownership ────────────────
+function getDeviceToken() {
+  let t = localStorage.getItem('u3dq_token');
+  if (!t) { t = crypto.randomUUID(); localStorage.setItem('u3dq_token', t); }
+  return t;
+}
 
 // ── Startup ──────────────────────────────────────────
 let bgMap = null;
@@ -277,11 +287,14 @@ async function startGame() {
   document.getElementById('startBtn').disabled = true;
   document.getElementById('startBtn').textContent = '⏳ Connexion…';
 
+  const myToken = getDeviceToken();
+
   // Check/insert player
-  const { data: existing } = await db.from('players').select('pseudo,score,found_count').eq('pseudo', pseudo).single();
+  const { data: existing } = await db.from('players').select('pseudo,score,found_count,token').eq('pseudo', pseudo).single();
   if (!existing) {
-    const { error } = await db.from('players').insert({ pseudo, joined_at: new Date().toISOString(), score: 0, found_count: 0 });
-    if (error && error.code !== '23505') { // ignore duplicate key
+    // New pseudo — register with device token
+    const { error } = await db.from('players').insert({ pseudo, joined_at: new Date().toISOString(), score: 0, found_count: 0, token: myToken });
+    if (error && error.code !== '23505') {
       err.textContent = 'Erreur réseau : ' + error.message;
       err.style.display = 'block';
       document.getElementById('startBtn').disabled = false;
@@ -289,6 +302,18 @@ async function startGame() {
       return;
     }
   } else {
+    // Existing pseudo — verify token ownership
+    if (existing.token && existing.token !== myToken) {
+      err.textContent = '🔒 Ce pseudo est déjà pris. Choisis un autre nom.';
+      err.style.display = 'block';
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('startBtn').textContent = '🚀 Rejoindre le jeu';
+      return;
+    }
+    // Same device or no token yet — update token if missing
+    if (!existing.token) {
+      await db.from('players').update({ token: myToken }).eq('pseudo', pseudo);
+    }
     myScore      = existing.score      || 0;
     myFoundCount = existing.found_count || 0;
   }
@@ -413,8 +438,14 @@ function startGeoWatch() {
   }
   let playerMarker = null;
   geoWatch = navigator.geolocation.watchPosition(pos => {
-    playerLat = pos.coords.latitude;
-    playerLng = pos.coords.longitude;
+    // Smooth GPS: keep last 5 positions, weighted average
+    gpsHistory.push({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy });
+    if (gpsHistory.length > 5) gpsHistory.shift();
+    const weights = [1, 2, 3, 4, 5].slice(gpsHistory.length > 5 ? 0 : 5 - gpsHistory.length);
+    const totalW = weights.reduce((a,b) => a+b, 0);
+    playerLat = gpsHistory.reduce((s, p, i) => s + p.lat * weights[i], 0) / totalW;
+    playerLng = gpsHistory.reduce((s, p, i) => s + p.lng * weights[i], 0) / totalW;
+    playerAccuracy = pos.coords.accuracy;
 
     if (gameMap) {
       if (!playerMarker) {
@@ -458,10 +489,18 @@ function distLabel(d) {
   return 'environ ' + (d / 1000).toFixed(1) + 'km';
 }
 
+function haptic(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
 function updateRadar() {
   if (playerLat === null) return;
   const bar = document.getElementById('radarBar');
   const fab = document.getElementById('captureFab');
+
+  // GPS accuracy warning
+  const accStr = playerAccuracy ? ` · GPS ±${Math.round(playerAccuracy)}m` : '';
+  const gpsWeak = playerAccuracy && playerAccuracy > 40;
 
   const candidates = treasures.filter(t => {
     if (t.type === 'unique' && t.found_by && t.found_by.length > 0) return false; // already taken
@@ -474,6 +513,7 @@ function updateRadar() {
     bar.className = '';
     fab.style.display = 'none';
     nearestFixed = null;
+    lastHapticZone = null;
     return;
   }
 
@@ -488,28 +528,31 @@ function updateRadar() {
   const isFixed = nearest.type === 'fixed';
 
   if (dist > proximityR * 5) {
-    bar.textContent = `🧭 ${isFixed ? '📌' : '🎁'} Le plus proche : ${label}`;
-    bar.className = '';
+    bar.textContent = `🧭 ${isFixed ? '📌' : '🎁'} Le plus proche : ${label}${accStr}`;
+    bar.className = gpsWeak ? 'near' : '';
     fab.style.display = 'none';
     nearestFixed = null;
+    if (lastHapticZone !== 'far') { lastHapticZone = 'far'; }
   } else if (dist > proximityR) {
-    bar.textContent = `🔥 Tu approches ! ${label}`;
+    bar.textContent = `🔥 Tu approches ! ${label}${accStr}`;
     bar.className = 'near';
     fab.style.display = 'none';
     nearestFixed = null;
+    if (lastHapticZone !== 'near') { lastHapticZone = 'near'; haptic([80, 60, 80]); }
   } else {
     if (isFixed) {
-      // Fixed beacon: GPS capture (only show FAB in map mode)
-      bar.textContent = `📌 Balise fixe à portée ! (${label})`;
+      const canCapture = !gpsWeak || playerAccuracy < proximityR * 1.5;
+      bar.textContent = `📌 Balise fixe à portée !${gpsWeak ? ' ⚠️ GPS faible' : ''}${accStr}`;
       bar.className = 'very-near';
-      nearestFixed = nearest;
-      fab.style.display = activeTab === 'map' ? 'block' : 'none';
+      nearestFixed = canCapture ? nearest : null;
+      fab.style.display = (activeTab === 'map' && canCapture) ? 'block' : 'none';
+      if (lastHapticZone !== 'capture') { lastHapticZone = 'capture'; haptic([100, 50, 100, 50, 200]); }
     } else {
-      // Mobile/unique beacon: QR scan via native camera
-      bar.textContent = `⚡ Tu y es ! ${label} — ouvre ta caméra et scanne le QR !`;
+      bar.textContent = `⚡ Tu y es ! ${label} — ouvre ta caméra et scanne le QR !${accStr}`;
       bar.className = 'very-near';
       fab.style.display = 'none';
       nearestFixed = null;
+      if (lastHapticZone !== 'capture') { lastHapticZone = 'capture'; haptic([100, 50, 100, 50, 200]); }
     }
   }
 }
@@ -519,8 +562,10 @@ async function captureFixed() {
   const fab = document.getElementById('captureFab');
   fab.disabled = true;
   fab.textContent = '⏳…';
+  haptic([50, 30, 50, 30, 300]); // capture attempt vibration
   await processFindById(nearestFixed.id);
   nearestFixed = null;
+  lastHapticZone = null;
   fab.style.display = 'none';
   fab.disabled = false;
   fab.textContent = '📸 Capturer !';
