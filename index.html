@@ -133,6 +133,8 @@
   <button id="compassPermBtn" onclick="requestCompassPermission()">🧭 Activer le compas (iOS)</button>
   <div id="compassStatus">GPS en cours…</div>
   <div id="compassCards"></div>
+  <div id="compassDebug" style="margin-top:16px;font-size:0.68rem;color:#334155;line-height:1.6;padding:8px 12px;background:#1e293b;border-radius:8px;display:none"></div>
+  <button onclick="toggleCompassDebug()" style="margin-top:8px;width:100%;padding:8px;background:transparent;border:1px solid #334155;border-radius:8px;color:#475569;font-size:0.7rem;cursor:pointer">🔧 Debug info</button>
 </div>
   <div id="lbList"><p style="color:#475569;text-align:center;padding:40px">Chargement…</p></div>
   <div class="lb-refresh" id="lbRefresh"></div>
@@ -529,10 +531,11 @@ function bearingTo(lat1, lng1, lat2, lng2) {
 }
 
 function startOrientationWatch() {
-  // iOS 13+: needs explicit permission
-  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+  // iOS 13+: needs explicit permission via button tap
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
     document.getElementById('compassPermBtn').style.display = 'block';
-    return; // will start after user grants permission
+    return;
   }
   _attachOrientationListeners();
 }
@@ -544,22 +547,36 @@ async function requestCompassPermission() {
       document.getElementById('compassPermBtn').style.display = 'none';
       _attachOrientationListeners();
     } else {
-      alert('Permission compas refusée. Les flèches seront statiques (direction depuis le Nord).');
+      document.getElementById('compassPermBtn').textContent = '⚠️ Compas refusé — flèches statiques';
     }
   } catch(e) {
-    alert('Erreur permission compas : ' + e);
+    document.getElementById('compassPermBtn').textContent = '⚠️ Erreur compas';
   }
 }
 
 function _attachOrientationListeners() {
-  // Android Chrome: deviceorientationabsolute gives true north reference
+  let hasAbsolute = false;
+
+  // Prefer deviceorientationabsolute (Android Chrome 67+) — true north
   window.addEventListener('deviceorientationabsolute', e => {
-    if (e.alpha !== null) deviceHeading = e.alpha;
+    if (e.alpha !== null && e.alpha !== undefined) {
+      hasAbsolute = true;
+      // alpha = rotation around Z axis, clockwise from north on Android
+      // Need to negate for clockwise compass heading
+      deviceHeading = (360 - e.alpha) % 360;
+    }
   }, true);
-  // iOS: webkitCompassHeading (clockwise from north, 0–360)
+
+  // Fallback: standard deviceorientation
   window.addEventListener('deviceorientation', e => {
-    if (typeof e.webkitCompassHeading === 'number') {
+    // iOS: webkitCompassHeading is directly clockwise from north
+    if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) {
       deviceHeading = e.webkitCompassHeading;
+      return;
+    }
+    // Android fallback if absolute didn't fire
+    if (!hasAbsolute && e.alpha !== null && e.alpha !== undefined) {
+      deviceHeading = (360 - e.alpha) % 360;
     }
   }, true);
 }
@@ -602,13 +619,20 @@ function updateCompass() {
   const status = document.getElementById('compassStatus');
   const cards  = document.getElementById('compassCards');
 
+  // GPS not yet acquired
   if (playerLat === null) {
-    status.textContent = '📍 En attente du GPS…';
-    cards.innerHTML = '<p style="text-align:center;color:#475569;padding:20px;font-size:0.8rem">Le GPS est nécessaire pour orienter les flèches.<br>Active la localisation sur ton téléphone.</p>';
+    status.innerHTML = '📍 En attente du GPS… <span style="font-size:0.7rem;color:#334155">(autorise la localisation)</span>';
+    cards.innerHTML = '';
     return;
   }
 
-  // 3 nearest fixed beacons not found by me
+  // Treasures not yet loaded
+  if (!treasures.length) {
+    status.textContent = '⏳ Chargement des balises…';
+    cards.innerHTML = '';
+    return;
+  }
+
   const allFixed = treasures.filter(t => t.type === 'fixed');
   const fixed = allFixed
     .filter(t => !(t.found_by && t.found_by.split(',').includes(myPseudo)))
@@ -617,35 +641,33 @@ function updateCompass() {
     .slice(0, 3);
 
   const hasHeading = deviceHeading !== null;
-  status.textContent = hasHeading
-    ? '🧭 Boussole active — pointe vers les balises'
-    : '🧭 Direction depuis le Nord (compas inactif)';
+  status.innerHTML = hasHeading
+    ? `🧭 Boussole active <span style="font-size:0.7rem;color:#475569">(cap: ${Math.round(deviceHeading)}°)</span>`
+    : '🧭 Direction Nord — <span style="font-size:0.7rem;color:#fb923c">compas inactif</span>';
 
   if (!fixed.length) {
-    if (!allFixed.length) {
-      cards.innerHTML = '<p style="text-align:center;color:#475569;padding:40px">Aucune balise fixe dans ce jeu.<br><span style="font-size:0.75rem">Les balises fixes sont créées depuis l\'admin avec le type "📌 Fixe".</span></p>';
-    } else {
-      cards.innerHTML = '<p style="text-align:center;color:#475569;padding:40px">✅ Toutes les balises fixes trouvées !</p>';
-    }
+    cards.innerHTML = !allFixed.length
+      ? '<p style="text-align:center;color:#475569;padding:40px">Aucune balise fixe dans ce jeu.</p>'
+      : '<p style="text-align:center;color:#4ade80;padding:40px;font-size:1.1rem">🏆 Toutes les balises fixes trouvées !</p>';
     return;
   }
 
-  // Always rebuild cards (simple, avoids stale DOM issues with special chars in IDs)
   cards.innerHTML = '';
   fixed.forEach(t => {
-    const dist = Math.round(t.dist);
-    const bearing = bearingTo(playerLat, playerLng, t.lat, t.lng);
+    const dist     = Math.round(t.dist);
+    const bearing  = bearingTo(playerLat, playerLng, t.lat, t.lng);
     const rotation = hasHeading ? (bearing - deviceHeading + 360) % 360 : bearing;
-    const inRange = dist <= proximityR;
-    const arrowColor = inRange ? '#22c55e' : '#3b82f6';
+    const inRange  = dist <= proximityR;
+    const arrowColor = inRange ? '#22c55e' : '#60a5fa';
 
     const card = document.createElement('div');
     card.className = 'cmp-card' + (inRange ? ' in-range' : '');
     card.innerHTML = `
       <div class="cmp-arrow-wrap">
-        <svg class="cmp-svg" style="transform:rotate(${rotation}deg);display:block" width="72" height="72" viewBox="0 0 80 80">
-          <polygon points="40,4 57,62 40,51 23,62" fill="${arrowColor}"/>
-          <circle cx="40" cy="40" r="8" fill="#0f172a" stroke="${arrowColor}" stroke-width="2.5"/>
+        <svg style="transform:rotate(${rotation}deg);transition:transform .3s ease;display:block;flex-shrink:0"
+             width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="32,4 44,52 32,42 20,52" fill="${arrowColor}" stroke="#0f172a" stroke-width="1.5"/>
+          <circle cx="32" cy="32" r="7" fill="#0f172a" stroke="${arrowColor}" stroke-width="2.5"/>
         </svg>
       </div>
       <div class="cmp-info">
@@ -662,6 +684,24 @@ async function captureFixedById(id, btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
   await processFindById(id);
   updateCompass();
+}
+
+function toggleCompassDebug() {
+  const el = document.getElementById('compassDebug');
+  const visible = el.style.display !== 'none';
+  if (visible) { el.style.display = 'none'; return; }
+  const allFixed = treasures.filter(t => t.type === 'fixed');
+  el.innerHTML = [
+    `GPS: ${playerLat !== null ? playerLat.toFixed(5)+', '+playerLng.toFixed(5) : '❌ null'}`,
+    `Heading: ${deviceHeading !== null ? Math.round(deviceHeading)+'°' : '❌ null'}`,
+    `Trésors total: ${treasures.length}`,
+    `Balises fixes: ${allFixed.length}`,
+    `activeTab: ${activeTab}`,
+    `compassInterval: ${compassInterval !== null ? '✅ actif' : '❌ null'}`,
+    `modeMap: ${modeMap} / modeCompass: ${modeCompass}`,
+    `myPseudo: ${myPseudo||'—'}`,
+  ].join('<br>');
+  el.style.display = 'block';
 }
 
 
