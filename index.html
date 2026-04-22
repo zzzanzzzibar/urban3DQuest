@@ -358,7 +358,7 @@ function updateHeader() {
 
 // ── Treasures ────────────────────────────────────────
 async function loadTreasures() {
-  let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at,quest').eq('visible', true);
+  let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
   if (activeQuest) q = q.eq('quest', activeQuest);
   const { data } = await q;
   if (!data) return;
