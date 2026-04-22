@@ -197,6 +197,7 @@ let activeTab    = 'map';
 let deviceHeading = null; // degrees clockwise from north (from device sensor)
 let compassInterval = null;
 let mapCenter    = [48.8566, 2.3522]; // default Paris, overridden by config
+let activeQuest  = '';   // empty = all quests visible
 let gameStart    = null;  // Date or null — reference timestamp for score calc
 let gameCode     = '';    // empty = open access
 let playerLat    = null, playerLng = null;
@@ -310,6 +311,7 @@ async function initGame(pendingFoundId) {
     if (c.modeMap !== undefined)     modeMap     = c.modeMap !== 'false';
     if (c.modeCompass !== undefined) modeCompass = c.modeCompass !== 'false';
     if (c.gameActive === 'false') showPause();
+    if (c.activeQuest !== undefined) activeQuest = c.activeQuest || '';
     if (c.mapCenter) {
       const parts = c.mapCenter.split(',').map(Number);
       if (parts.length === 2 && !isNaN(parts[0])) mapCenter = parts;
@@ -354,7 +356,9 @@ function updateHeader() {
 
 // ── Treasures ────────────────────────────────────────
 async function loadTreasures() {
-  const { data } = await db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
+  let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at,quest').eq('visible', true);
+  if (activeQuest) q = q.eq('quest', activeQuest);
+  const { data } = await q;
   if (!data) return;
   treasures = data;
 }
