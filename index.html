@@ -731,12 +731,25 @@ function showFoundResult(status, t, durationSec) {
   } else { photoStrip.style.display = 'none'; }
 
   if (status === 'success') {
-    emoji.textContent = t.type === 'unique' ? '🎁' : '✅';
-    title.textContent = `"${t.label || 'Trésor'}" trouvé !`;
-    dur.textContent   = formatDuration(durationSec);
-    desc.textContent  = t.type === 'unique'
-      ? 'Bravo ! Tu es le premier à l\'avoir récupéré.'
-      : 'Flashé ! Ce trésor reste en place pour les autres.';
+    if (t.type === 'fixed') {
+      emoji.textContent = '✅';
+      title.textContent = `"${t.label || 'Balise'}" capturée !`;
+      dur.textContent   = '';
+      // Compte combien de fixes il reste
+      const remaining = treasures.filter(tr =>
+        tr.type === 'fixed' &&
+        !(tr.found_by && tr.found_by.split(',').includes(myPseudo)) &&
+        tr.id !== t.id
+      ).length;
+      desc.textContent = remaining > 0
+        ? `Bravo ! Il te reste ${remaining} balise${remaining > 1 ? 's' : ''} fixe${remaining > 1 ? 's' : ''} à trouver. Continue !`
+        : '� Incroyable ! Tu as trouvé toutes les balises fixes !';
+    } else {
+      emoji.textContent = '🎁';
+      title.textContent = `"${t.label || 'Trésor'}" trouvé !`;
+      dur.textContent   = formatDuration(durationSec);
+      desc.textContent  = 'Bravo ! Tu es le premier à l\'avoir récupéré.';
+    }
   } else if (status === 'already') {
     emoji.textContent = '🔄';
     title.textContent = 'Déjà trouvé !';
