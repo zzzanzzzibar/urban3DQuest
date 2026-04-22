@@ -26,6 +26,14 @@
     header h1{font-size:0.88rem;flex:1;color:#94a3b8}
     .pseudo-chip{background:#172554;color:#93c5fd;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
     .score-chip{background:#052e16;color:#4ade80;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
+    #gpsChip{display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:20px;font-size:0.72rem;font-weight:600;background:#1e293b;border:1px solid #334155;color:#64748b;cursor:default;transition:all .4s}
+    #gpsDot{width:8px;height:8px;border-radius:50%;background:#475569;flex-shrink:0;transition:background .4s}
+    #gpsChip.gps-ok{border-color:#16a34a;color:#4ade80}
+    #gpsChip.gps-ok #gpsDot{background:#4ade80;box-shadow:0 0 6px #22c55e}
+    #gpsChip.gps-mid{border-color:#d97706;color:#fbbf24}
+    #gpsChip.gps-mid #gpsDot{background:#fbbf24}
+    #gpsChip.gps-bad{border-color:#dc2626;color:#f87171;animation:pulse .8s infinite}
+    #gpsChip.gps-bad #gpsDot{background:#f87171}
     /* ── Nav ── */
     nav{display:flex;background:#1e293b;border-bottom:1px solid #334155}
     nav button{flex:1;padding:11px 4px;background:none;border:none;color:#64748b;font-size:0.75rem;cursor:pointer}
@@ -114,6 +122,7 @@
 <!-- ── Header ────────────────────────────────────────── -->
 <header>
   <h1>🗺 Urban3DQuest</h1>
+  <span id="gpsChip" title="Précision GPS"><span id="gpsDot"></span><span id="gpsLabel">GPS…</span></span>
   <span class="pseudo-chip" id="headerPseudo"></span>
   <span class="score-chip" id="headerScore">0 🏆</span>
 </header>
@@ -422,6 +431,7 @@ function startGeoWatch() {
     return;
   }
   let playerMarker = null;
+  let accuracyCircle = null;
   geoWatch = navigator.geolocation.watchPosition(pos => {
     // Smooth GPS: keep last 5 positions, weighted average
     gpsHistory.push({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy });
@@ -432,28 +442,46 @@ function startGeoWatch() {
     playerLng = gpsHistory.reduce((s, p, i) => s + p.lng * weights[i], 0) / totalW;
     playerAccuracy = pos.coords.accuracy;
 
+    // Update GPS chip in header
+    const chip = document.getElementById('gpsChip');
+    const lbl  = document.getElementById('gpsLabel');
+    const acc  = Math.round(playerAccuracy);
+    if (chip && lbl) {
+      lbl.textContent = `±${acc}m`;
+      chip.className = acc <= 15 ? 'gps-ok' : acc <= 40 ? 'gps-mid' : 'gps-bad';
+      chip.title = acc <= 15 ? `GPS précis (±${acc}m)` : acc <= 40 ? `GPS moyen (±${acc}m) — reste à l'air libre` : `GPS faible (±${acc}m) — éloigne-toi des bâtiments`;
+    }
+
     if (gameMap) {
+      const pos2 = [playerLat, playerLng];
+      // Accuracy circle
+      const circleColor = acc <= 15 ? '#22c55e' : acc <= 40 ? '#f59e0b' : '#ef4444';
+      if (!accuracyCircle) {
+        accuracyCircle = L.circle(pos2, { radius: playerAccuracy, color: circleColor, fillColor: circleColor, fillOpacity: 0.08, weight: 1.5, opacity: 0.4 }).addTo(gameMap);
+      } else {
+        accuracyCircle.setLatLng(pos2).setRadius(playerAccuracy).setStyle({ color: circleColor, fillColor: circleColor });
+      }
+      // Player marker
       if (!playerMarker) {
         const icon = L.divIcon({
           html: `<div style="background:#f59e0b;width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 4px rgba(245,158,11,.3)"></div>`,
           className: '', iconSize: [12, 12], iconAnchor: [6, 6]
         });
-        const rLat = Math.round(playerLat * 10000) / 10000;
-        const rLng = Math.round(playerLng * 10000) / 10000;
-        playerMarker = L.marker([rLat, rLng], { icon, zIndexOffset: 1000 }).addTo(gameMap);
+        playerMarker = L.marker(pos2, { icon, zIndexOffset: 1000 }).addTo(gameMap);
       } else {
-        const rLat = Math.round(playerLat * 10000) / 10000;
-        const rLng = Math.round(playerLng * 10000) / 10000;
-        playerMarker.setLatLng([rLat, rLng]);
+        playerMarker.setLatLng(pos2);
       }
     }
 
     updateRadar();
   }, err => {
-    const msgs = { 1: 'Permission GPS refusée', 2: 'GPS indisponible', 3: 'Délai GPS dépassé' };
+    const msgs = { 1: 'Permission GPS refusée — active la localisation dans les réglages', 2: 'GPS indisponible', 3: 'Délai GPS dépassé — reste à l\'air libre' };
     const bar = document.getElementById('radarBar');
-    bar.textContent = '📍 ' + (msgs[err.code] || 'Erreur GPS') + ' — active la localisation';
+    bar.textContent = '📍 ' + (msgs[err.code] || 'Erreur GPS');
     bar.className = '';
+    const chip = document.getElementById('gpsChip');
+    const lbl  = document.getElementById('gpsLabel');
+    if (chip && lbl) { lbl.textContent = 'off'; chip.className = 'gps-bad'; }
   }, { enableHighAccuracy: true, maximumAge: 5000 });
 }
 
