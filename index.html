@@ -135,7 +135,7 @@
 <!-- ── Explorer (carte + boussole fusionnées) ────────── -->
 <div id="panelExplore" class="panel active">
   <div id="miniMap" style="position:relative">
-    <button id="arrowToggleBtn" onclick="toggleCompassArrows()" style="position:absolute;bottom:10px;right:10px;z-index:1000;background:rgba(15,23,42,.88);border:2px solid #334155;border-radius:12px;color:#94a3b8;font-size:0.75rem;font-weight:700;padding:7px 12px;cursor:pointer;backdrop-filter:blur(6px)">🧭 Flèches</button>
+    <button id="arrowToggleBtn" onclick="toggleCompassArrows()" style="position:absolute;bottom:10px;right:10px;z-index:1000;background:rgba(30,58,138,.88);border:2px solid #3b82f6;border-radius:12px;color:#93c5fd;font-size:0.75rem;font-weight:700;padding:7px 12px;cursor:pointer;backdrop-filter:blur(6px)">🧭 Flèches</button>
   </div>
   <div id="compassSection">
     <button id="compassPermBtn" onclick="requestCompassPermission()" style="display:none;width:100%;padding:12px;background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;border-radius:12px;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:12px">🧭 Activer le compas (iOS)</button>
@@ -223,7 +223,8 @@ let lbInterval   = null;
 let geoWatch     = null;
 let lastHapticZone = null;
 let directionLayers = []; // arrow markers on minimap
-let compassArrowMode = false; // toggle: show direction arrows on minimap
+let compassArrowMode = true; // toggle: show direction arrows on minimap
+let lastArrowLat = null, lastArrowLng = null, lastArrowHeading = null; // throttle
 
 // ── Device token for pseudo ownership ────────────────
 function getDeviceToken() {
@@ -459,6 +460,10 @@ function startGeoWatch() {
         playerMarker = L.marker(pos2, { icon, zIndexOffset: 1000 }).addTo(gameMap);
       } else {
         playerMarker.setLatLng(pos2);
+      }
+      // Follow player on map only when on explore tab
+      if (activeTab === 'explore') {
+        gameMap.setView(pos2, gameMap.getZoom(), { animate: true });
       }
     }
 
@@ -705,57 +710,57 @@ function updateCompass() {
     return;
   }
 
-  // Center minimap on player
+  // Center minimap on player — now handled by startGeoWatch
   if (gameMap) {
-    gameMap.setView([playerLat, playerLng], gameMap.getZoom(), { animate: true });
+    // Throttle arrow redraw: only if position moved >2m or heading changed >5°
+    const headingChanged = lastArrowHeading === null || Math.abs((deviceHeading || 0) - lastArrowHeading) > 5;
+    const posChanged = lastArrowLat === null || haversine(playerLat, playerLng, lastArrowLat, lastArrowLng) > 2;
 
-    // Clear old direction lines
-    directionLayers.forEach(l => gameMap.removeLayer(l));
-    directionLayers = [];
+    if (posChanged || headingChanged) {
+      lastArrowLat = playerLat; lastArrowLng = playerLng; lastArrowHeading = deviceHeading || 0;
 
-    if (compassArrowMode) {
-      // Draw direction arrows (Option B): short arrow + distance label from player
-      const unfoundFixed = treasures
-        .filter(t => t.type === 'fixed' && !(t.found_by && t.found_by.split(',').includes(myPseudo)))
-        .map(t => ({ ...t, dist: haversine(playerLat, playerLng, t.lat, t.lng) }))
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, 3);
+      // Clear old direction lines
+      directionLayers.forEach(l => gameMap.removeLayer(l));
+      directionLayers = [];
 
-      // Fixed arrow length in meters on map (visual, not actual distance)
-      const arrowLen = 60; // meters from player center
+      if (compassArrowMode) {
+        // Draw direction arrows: short arrow + distance label from player
+        const unfoundFixed = treasures
+          .filter(t => t.type === 'fixed' && !(t.found_by && t.found_by.split(',').includes(myPseudo)))
+          .map(t => ({ ...t, dist: haversine(playerLat, playerLng, t.lat, t.lng) }))
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, 3);
 
-      unfoundFixed.forEach(t => {
-        const bearing = bearingTo(playerLat, playerLng, t.lat, t.lng);
-        const inRange = t.dist <= proximityR;
-        const color   = inRange ? '#22c55e' : t.dist < proximityR * 5 ? '#fbbf24' : '#60a5fa';
-        const distStr = t.dist < 1000 ? `${Math.round(t.dist)}m` : `${(t.dist/1000).toFixed(1)}km`;
+        const arrowLen = 60; // meters visual length
 
-        // Shaft: from player to arrowLen meters in bearing direction
-        const tip = destinationPoint(playerLat, playerLng, bearing, arrowLen);
-        const shaft = destinationPoint(playerLat, playerLng, bearing, arrowLen * 0.55);
+        unfoundFixed.forEach(t => {
+          const bearing = bearingTo(playerLat, playerLng, t.lat, t.lng);
+          const inRange = t.dist <= proximityR;
+          const color   = inRange ? '#22c55e' : t.dist < proximityR * 5 ? '#fbbf24' : '#60a5fa';
+          const distStr = t.dist < 1000 ? `${Math.round(t.dist)}m` : `${(t.dist/1000).toFixed(1)}km`;
 
-        const line = L.polyline([[playerLat, playerLng], tip], {
-          color, weight: 3, opacity: 0.9
-        }).addTo(gameMap);
+          const tip   = destinationPoint(playerLat, playerLng, bearing, arrowLen);
+          const shaft = destinationPoint(playerLat, playerLng, bearing, arrowLen * 0.55);
 
-        // Arrowhead marker at tip
-        const arrowIcon = L.divIcon({
-          html: `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg" style="transform:rotate(${bearing}deg);transform-origin:50% 75%;display:block">
-            <polygon points="14,0 22,20 14,15 6,20" fill="${color}" stroke="#0f172a" stroke-width="1.5"/>
-          </svg>`,
-          className: '', iconSize: [28, 36], iconAnchor: [14, 27]
+          const line = L.polyline([[playerLat, playerLng], tip], { color, weight: 3, opacity: 0.9 }).addTo(gameMap);
+
+          const arrowIcon = L.divIcon({
+            html: `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg" style="transform:rotate(${bearing}deg);transform-origin:50% 75%;display:block">
+              <polygon points="14,0 22,20 14,15 6,20" fill="${color}" stroke="#0f172a" stroke-width="1.5"/>
+            </svg>`,
+            className: '', iconSize: [28, 36], iconAnchor: [14, 27]
+          });
+          const arrowMarker = L.marker(tip, { icon: arrowIcon, interactive: false, zIndexOffset: 500 }).addTo(gameMap);
+
+          const labelIcon = L.divIcon({
+            html: `<div style="background:rgba(15,23,42,.85);color:${color};font-size:0.68rem;font-weight:700;padding:2px 6px;border-radius:8px;border:1px solid ${color};white-space:nowrap;backdrop-filter:blur(4px)">${distStr}</div>`,
+            className: '', iconSize: [60, 20], iconAnchor: [30, -4]
+          });
+          const labelMarker = L.marker(shaft, { icon: labelIcon, interactive: false, zIndexOffset: 501 }).addTo(gameMap);
+
+          directionLayers.push(line, arrowMarker, labelMarker);
         });
-        const arrowMarker = L.marker(tip, { icon: arrowIcon, interactive: false, zIndexOffset: 500 }).addTo(gameMap);
-
-        // Distance label slightly behind the tip
-        const labelIcon = L.divIcon({
-          html: `<div style="background:rgba(15,23,42,.85);color:${color};font-size:0.68rem;font-weight:700;padding:2px 6px;border-radius:8px;border:1px solid ${color};white-space:nowrap;backdrop-filter:blur(4px)">${distStr}</div>`,
-          className: '', iconSize: [60, 20], iconAnchor: [30, -4]
-        });
-        const labelMarker = L.marker(shaft, { icon: labelIcon, interactive: false, zIndexOffset: 501 }).addTo(gameMap);
-
-        directionLayers.push(line, arrowMarker, labelMarker);
-      });
+      }
     }
   }
 
@@ -820,7 +825,8 @@ function toggleCompassArrows() {
     btn.style.color       = compassArrowMode ? '#93c5fd' : '#94a3b8';
     btn.style.background  = compassArrowMode ? 'rgba(30,58,138,.88)' : 'rgba(15,23,42,.88)';
   }
-  // Clear and redraw immediately
+  // Clear and redraw immediately by resetting throttle
+  lastArrowLat = null; lastArrowLng = null; lastArrowHeading = null;
   directionLayers.forEach(l => gameMap && gameMap.removeLayer(l));
   directionLayers = [];
   updateCompass();
