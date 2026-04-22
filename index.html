@@ -528,18 +528,37 @@ function updateRadar() {
     return;
   }
 
-  let nearest = null, minDist = Infinity;
+  // Separate nearest fixed vs nearest unique
+  let nearestF = null, minDistF = Infinity;
+  let nearestU = null, minDistU = Infinity;
   candidates.forEach(t => {
     const d = haversine(playerLat, playerLng, t.lat, t.lng);
-    if (d < minDist) { minDist = d; nearest = t; }
+    if (t.type === 'fixed'  && d < minDistF) { minDistF = d; nearestF = t; }
+    if (t.type === 'unique' && d < minDistU) { minDistU = d; nearestU = t; }
   });
 
-  const dist = Math.round(minDist);
+  // Radar bar is driven by nearest FIXED only
+  // Unique beacons are visible on map — no distance hint needed
+  if (!nearestF) {
+    // No fixed left — check unique only for "à portée" QR prompt
+    if (nearestU && Math.round(minDistU) <= proximityR) {
+      bar.textContent = `🎁 Balise unique à portée — scanne le QR !${accStr}`;
+      bar.className = 'very-near';
+      if (lastHapticZone !== 'capture') { lastHapticZone = 'capture'; haptic([100, 50, 100, 50, 200]); }
+    } else {
+      bar.textContent = nearestU ? `🎁 Balises uniques visibles sur la carte${accStr}` : '✅ Tous les trésors trouvés !';
+      bar.className = '';
+    }
+    fab.style.display = 'none';
+    nearestFixed = null;
+    return;
+  }
+
+  const dist = Math.round(minDistF);
   const label = distLabel(dist);
-  const isFixed = nearest.type === 'fixed';
 
   if (dist > proximityR * 5) {
-    bar.textContent = `🧭 ${isFixed ? '📌' : '🎁'} Le plus proche : ${label}${accStr}`;
+    bar.textContent = `🧭 📌 Balise fixe : ${label}${accStr}`;
     bar.className = gpsWeak ? 'near' : '';
     fab.style.display = 'none';
     nearestFixed = null;
@@ -551,20 +570,12 @@ function updateRadar() {
     nearestFixed = null;
     if (lastHapticZone !== 'near') { lastHapticZone = 'near'; haptic([80, 60, 80]); }
   } else {
-    if (isFixed) {
-      const canCapture = !gpsWeak || playerAccuracy < proximityR * 1.5;
-      bar.textContent = `📌 Balise fixe à portée !${gpsWeak ? ' ⚠️ GPS faible' : ''}${accStr}`;
-      bar.className = 'very-near';
-      nearestFixed = canCapture ? nearest : null;
-      fab.style.display = (activeTab === 'explore' && canCapture) ? 'block' : 'none';
-      if (lastHapticZone !== 'capture') { lastHapticZone = 'capture'; haptic([100, 50, 100, 50, 200]); }
-    } else {
-      bar.textContent = `⚡ Tu y es ! ${label} — ouvre ta caméra et scanne le QR !${accStr}`;
-      bar.className = 'very-near';
-      fab.style.display = 'none';
-      nearestFixed = null;
-      if (lastHapticZone !== 'capture') { lastHapticZone = 'capture'; haptic([100, 50, 100, 50, 200]); }
-    }
+    const canCapture = !gpsWeak || playerAccuracy < proximityR * 1.5;
+    bar.textContent = `📌 Balise fixe à portée !${gpsWeak ? ' ⚠️ GPS faible' : ''}${accStr}`;
+    bar.className = 'very-near';
+    nearestFixed = canCapture ? nearestF : null;
+    fab.style.display = (activeTab === 'explore' && canCapture) ? 'block' : 'none';
+    if (lastHapticZone !== 'capture') { lastHapticZone = 'capture'; haptic([100, 50, 100, 50, 200]); }
   }
 }
 
