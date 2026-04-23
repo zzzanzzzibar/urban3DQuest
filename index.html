@@ -468,7 +468,10 @@ function updateHeader() {
 // ── Treasures ────────────────────────────────────────
 async function loadTreasures() {
   let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
-  if (activeQuests.length) q = q.or('quest.in.(' + activeQuests.join(',') + '),quest.is.null');
+  if (activeQuests.length) {
+    const quoted = activeQuests.map(q => '"' + q + '"').join(',');
+    q = q.or('quest.in.(' + quoted + '),quest.is.null,quest.eq.');
+  }
   const { data } = await q;
   if (!data) return;
   treasures = data;
