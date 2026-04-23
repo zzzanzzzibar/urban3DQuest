@@ -1077,17 +1077,25 @@ function formatDuration(sec) {
 // ── Leaderboard ──────────────────────────────────────
 async function loadLeaderboard() {
   const el = document.getElementById('lbList');
-  const [evRes, cfgRes] = await Promise.all([
-    db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at').order('created_at', { ascending: true }),
-    db.from('config').select('key,value')
-  ]);
-  if (evRes.error) {
-    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">Erreur de chargement — réessaie dans un instant</p>`;
+  el.innerHTML = `<p style="color:#475569;text-align:center;padding:30px">⏳ Chargement…</p>`;
+  let evRes, cfgRes;
+  try {
+    [evRes, cfgRes] = await Promise.all([
+      db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at').order('created_at', { ascending: true }),
+      db.from('config').select('key,value')
+    ]);
+  } catch(netErr) {
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur réseau : ${netErr.message}</p>`;
     return;
   }
+  if (evRes.error) {
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur Supabase : ${evRes.error.message}</p>`;
+    return;
+  }
+  try {
   const events = evRes.data || [];
   const cfg    = Object.fromEntries((cfgRes.data || []).map(r => [r.key, r.value]));
-  const rewardMsg = activeQuests.map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
+  const rewardMsg = (activeQuests || []).map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
   const totalFixed = parseInt(cfg.fixedTotal || fixedTotal || 0);
 
   // Group events by player
@@ -1221,6 +1229,10 @@ async function loadLeaderboard() {
 
   document.getElementById('lbList').innerHTML = html;
   document.getElementById('lbRefresh').textContent = '↻ ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  } catch(renderErr) {
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur rendu : ${renderErr.message}</p>`;
+    console.error('loadLeaderboard error:', renderErr);
+  }
 }
 
 function startLbPolling() {
