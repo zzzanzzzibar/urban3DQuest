@@ -270,6 +270,17 @@
   <button class="btn" style="background:#450a0a;color:#f87171;border:1px solid #7f1d1d" onclick="resetGame()">🔄 Réinitialiser la partie</button>
 </div>
 <div id="panelQr" class="panel">
+  <!-- ── Section balises fixes ── -->
+  <div style="background:#0f2213;border:1px solid #166534;border-radius:12px;padding:14px;margin-bottom:18px">
+    <div style="font-weight:700;color:#4ade80;font-size:0.9rem;margin-bottom:10px">📌 QR codes — Balises fixes</div>
+    <p style="font-size:0.78rem;color:#94a3b8;margin-bottom:10px">Génère un QR unique (<code>?checkin=&lt;id&gt;</code>) pour chaque balise fixe enregistrée en base. À imprimer avant de poser les balises.</p>
+    <button class="btn" onclick="generateFixedQRCodes()" style="background:#166534;border:1px solid #4ade80">⚡ Générer les QR balises fixes</button>
+    <button class="btn" id="zipFixedBtn" style="background:#1e293b;border:1px solid #334155;display:none" onclick="downloadFixedQrZip()">⬇ Télécharger ZIP (PNG 400px)</button>
+    <p id="fixedQrInfo" style="font-size:0.75rem;color:#475569;margin-top:8px;display:none"></p>
+    <div id="fixedQrGrid" class="qr-grid" style="margin-top:12px"></div>
+  </div>
+  <!-- ── Section QR génériques (tags mobiles) ── -->
+  <div style="font-weight:700;color:#93c5fd;font-size:0.9rem;margin-bottom:10px">🏷 QR génériques (tags mobiles — système ancien)</div>
   <div class="field">
     <label>Préfixe</label>
     <input type="text" id="qrPrefix" value="QR" maxlength="6" style="text-transform:uppercase">
@@ -436,6 +447,75 @@ async function saveConfig(){var st=document.getElementById('stCfg');var center=g
 async function resetGame(){if(!confirm('ATTENTION : Remettre la partie à zéro ?\n\n• Tous les trésors seront démarqués (found_by remis à vide)\n• Tous les joueurs et événements seront supprimés\n\nCette action est irréversible.'))return;if(!confirm('Confirmation finale : vraiment réinitialiser ?'))return;var st=document.getElementById('stCfg');st.className='status';st.textContent='Réinitialisation...';st.style.display='block';try{await db.from('treasures').update({found_by:'',found_at:null}).neq('id','__none__');await db.from('events').delete().neq('id',0);await db.from('players').delete().neq('pseudo','__none__');showStatus(st,'ok','Partie réinitialisée ✓ — trésors remis à zéro, joueurs et events supprimés');}catch(e){showStatus(st,'err','Erreur : '+e.message);}}
 async function loadStats(){var r1=await db.from('treasures').select('id,type,found_by');var r2=await db.from('players').select('pseudo,found_count,score');var t=r1.data||[];var p=r2.data||[];var totalFixed=t.filter(function(x){return x.type==='fixed';}).length;var totalUnique=t.filter(function(x){return x.type==='unique';}).length;var foundFixed=t.filter(function(x){return x.type==='fixed'&&x.found_by&&x.found_by.length>0;}).length;var foundUnique=t.filter(function(x){return x.type==='unique'&&x.found_by&&x.found_by.length>0;}).length;var topPlayer=p.length?p.slice().sort(function(a,b){return b.found_count-a.found_count||(a.score-b.score);})[0]:null;document.getElementById('statsDiv').innerHTML='<div class="stat-row"><span>Trésors fixes</span><span>'+foundFixed+' / '+totalFixed+' trouvés</span></div><div class="stat-row"><span>Trésors uniques</span><span>'+foundUnique+' / '+totalUnique+' trouvés</span></div><div class="stat-row"><span>Joueurs inscrits</span><span>'+p.length+'</span></div>'+(topPlayer?'<div class="stat-row"><span>🥇 Meilleur joueur</span><span>'+topPlayer.pseudo+' ('+topPlayer.found_count+' trouvés)</span></div>':'')+'<button class="btn" style="background:#1e293b;border:1px solid #334155;margin-top:12px;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv</button>';}
 async function exportCSV(){var r=await db.from('events').select('created_at,pseudo,treasure_id,treasure_type,duration_sec').order('created_at',{ascending:true});if(!r.data||!r.data.length){alert('Aucun événement enregistré.');return;}var header='date,pseudo,tresor_id,type,duree_sec\n';var rows=r.data.map(function(e){return[new Date(e.created_at).toLocaleString('fr-FR'),e.pseudo||'',e.treasure_id||'',e.treasure_type||'',e.duration_sec||0].join(',');}).join('\n');var blob=new Blob(['\ufeff'+header+rows],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='urban3dquest_events.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);}
+async function generateFixedQRCodes(){
+  var grid=document.getElementById('fixedQrGrid');
+  var info=document.getElementById('fixedQrInfo');
+  grid.innerHTML='<p style="color:#475569;font-size:0.8rem">Chargement…</p>';
+  info.style.display='none';
+  var res=await db.from('treasures').select('id,label,found_by').eq('type','fixed').order('placed_at',{ascending:true});
+  if(res.error){grid.innerHTML='<p style="color:#f87171">'+res.error.message+'</p>';return;}
+  if(!res.data||!res.data.length){grid.innerHTML='<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:16px">Aucune balise fixe enregistrée.</p>';return;}
+  grid.innerHTML='';
+  window._fixedQrData=res.data;
+  res.data.forEach(function(t){
+    var name=(t.label||'Balise fixe').substring(0,16);
+    var found=t.found_by&&t.found_by.length>0;
+    var sid='fqrs_'+t.id.replace(/[^a-z0-9]/gi,'_');
+    var url=GAME_BASE_URL+'/?checkin='+encodeURIComponent(t.id);
+    var card=document.createElement('div');
+    card.className='qr-card';
+    card.style.border='2px solid '+(found?'#f97316':'#166534');
+    card.style.opacity=found?'0.5':'1';
+    card.innerHTML='<div class="qr-card-id" style="color:'+(found?'#f97316':'#4ade80')+'">'+name+(found?' 🎯':'')+'</div>'
+      +'<div style="font-size:0.58rem;color:#475569;margin-bottom:4px;font-family:monospace;word-break:break-all">'+t.id+'</div>'
+      +'<div id="'+sid+'"></div>';
+    grid.appendChild(card);
+    new QRCode(document.getElementById(sid),{text:url,width:120,height:120,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  });
+  var total=res.data.length;
+  var foundCount=res.data.filter(function(t){return t.found_by&&t.found_by.length>0;}).length;
+  info.innerHTML=total+' balises — <span style="color:#4ade80">'+(total-foundCount)+' à poser</span>'+(foundCount?', <span style="color:#f97316">'+foundCount+' déjà trouvées 🎯</span>':'');
+  info.style.display='block';
+  document.getElementById('zipFixedBtn').style.display='block';
+}
+async function downloadFixedQrZip(){
+  var btn=document.getElementById('zipFixedBtn');
+  var data=window._fixedQrData||[];
+  if(!data.length){alert('Générez d\'abord les QR balises fixes.');return;}
+  btn.disabled=true;btn.textContent='⏳ Création du ZIP…';
+  var zip=new JSZip();
+  var tmp=document.createElement('div');
+  tmp.style.cssText='position:fixed;left:-9999px;top:0;visibility:hidden';
+  document.body.appendChild(tmp);
+  var QR_SZ=400;var PAD=72;
+  data.forEach(function(t){
+    var url=GAME_BASE_URL+'/?checkin='+encodeURIComponent(t.id);
+    var name=(t.label||'Balise fixe');
+    var wrap=document.createElement('div');tmp.appendChild(wrap);
+    new QRCode(wrap,{text:url,width:QR_SZ,height:QR_SZ,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    var qrCanvas=wrap.querySelector('canvas');
+    if(qrCanvas){
+      var canvas=document.createElement('canvas');
+      canvas.width=QR_SZ;canvas.height=QR_SZ+PAD;
+      var ctx=canvas.getContext('2d');
+      ctx.fillStyle='#ffffff';ctx.fillRect(0,0,QR_SZ,QR_SZ+PAD);
+      ctx.drawImage(qrCanvas,0,0);
+      ctx.fillStyle='#000000';
+      ctx.font='bold 16px monospace';ctx.textAlign='center';
+      ctx.fillText(t.id.substring(0,50),QR_SZ/2,QR_SZ+20);
+      ctx.font='bold 22px sans-serif';
+      ctx.fillText(name.substring(0,40),QR_SZ/2,QR_SZ+50);
+      var safeName=name.replace(/[^a-zA-Z0-9\-_]/g,'_').substring(0,40);
+      zip.file('balise_'+safeName+'.png',canvas.toDataURL('image/png').split(',')[1],{base64:true});
+    }
+    tmp.removeChild(wrap);
+  });
+  document.body.removeChild(tmp);
+  var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='balises_fixes_qrcodes.zip';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  btn.disabled=false;btn.textContent='⬇ Télécharger ZIP (PNG 400px)';
+}
 function generateQRCodes(){
   var prefix=(document.getElementById('qrPrefix').value||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');
   var count=Math.min(parseInt(document.getElementById('qrCount').value)||30,150);
