@@ -568,9 +568,8 @@ async function changeQuest(id, currentQuest){
   if(choice===null)return;
   var idx=parseInt(choice);
   var newQuest=(idx===0||isNaN(idx))?'':(questList[idx-1]||'');
-  // Contournement cache PostgREST : appel RPC (fonction SQL côté serveur)
-  var rpcRes=await db.rpc('update_treasure_quest',{p_id:id,p_quest:newQuest});
-  if(rpcRes.error){alert('Erreur : '+rpcRes.error.message);return;}
+  var res=await db.from('treasures').update({quest:newQuest}).eq('id',id);
+  if(res.error){alert('Erreur : '+res.error.message);return;}
   // Update badge in card DOM immediately
   var card=document.getElementById('lbl_'+id)?.closest('.t-card');
   if(card){
