@@ -140,6 +140,22 @@
     #arrowToggleBtn:active{transform:scale(0.9)}
     #locateMeBtn{min-height:48px!important;min-width:48px!important;padding:10px!important;transition:transform .1s}
     #locateMeBtn:active{transform:scale(0.9)}
+    /* ── QR Scanner overlay ── */
+    #qrOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:2000;align-items:center;justify-content:center;flex-direction:column;padding:20px}
+    #qrOverlay.open{display:flex}
+    #qrBox{width:100%;max-width:380px;text-align:center}
+    #qrTitle{color:#f1f5f9;font-size:1.1rem;font-weight:800;margin-bottom:6px;letter-spacing:0.02em}
+    #qrSubtitle{color:#94a3b8;font-size:0.82rem;margin-bottom:16px}
+    #qrViewport{position:relative;width:100%;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#000;margin-bottom:16px;max-height:60vmin}
+    #qrVideo{width:100%;height:100%;object-fit:cover;display:block}
+    #qrFrame{position:absolute;inset:14%;border:2.5px solid #3b82f6;border-radius:12px;pointer-events:none}
+    #qrFrame::before,#qrFrame::after{content:'';position:absolute;width:20px;height:20px;border-color:#60a5fa;border-style:solid}
+    #qrFrame::before{top:-2px;left:-2px;border-width:3px 0 0 3px;border-radius:4px 0 0 4px}
+    #qrFrame::after{bottom:-2px;right:-2px;border-width:0 3px 3px 0;border-radius:0 0 4px 0}
+    #qrStatus{color:#94a3b8;font-size:0.88rem;margin-bottom:20px;min-height:2.4em;line-height:1.5}
+    #qrStatus.qr-ok{color:#4ade80}
+    #qrStatus.qr-err{color:#f87171}
+    #qrCloseBtn{padding:14px 40px;background:#1e293b;border:1px solid #334155;border-radius:12px;color:#f1f5f9;font-size:1rem;font-weight:700;cursor:pointer;min-height:52px;width:100%}
   </style>
 </head>
 <body>
@@ -224,6 +240,20 @@
     <div class="duration" id="foundDuration"></div>
     <p id="foundDesc"></p>
     <button class="btn-main" onclick="closeFound()">✅ Continuer</button>
+  </div>
+</div>
+
+<!-- ── QR Scanner overlay ──────────────────────────── -->
+<div id="qrOverlay">
+  <div id="qrBox">
+    <div id="qrTitle">📷 Scanner la balise</div>
+    <div id="qrSubtitle">Pointe vers le QR code sur la balise physique</div>
+    <div id="qrViewport">
+      <video id="qrVideo" autoplay playsinline muted></video>
+      <div id="qrFrame"></div>
+    </div>
+    <div id="qrStatus">Initialisation de la caméra…</div>
+    <button id="qrCloseBtn" onclick="closeQRScanner()">✕ Annuler</button>
   </div>
 </div>
 
@@ -776,16 +806,8 @@ function updateRadar() {
 
 async function captureFixed() {
   if (!nearestFixed) return;
-  const fab = document.getElementById('captureFab');
-  fab.disabled = true;
-  fab.textContent = '⏳…';
-  haptic([50, 30, 50, 30, 300]); // capture attempt vibration
-  await processFindById(nearestFixed.id);
-  nearestFixed = null;
-  lastHapticZone = null;
-  fab.style.display = 'none';
-  fab.disabled = false;
-  fab.textContent = '📸 Capturer !';
+  haptic([50, 30, 50]);
+  openQRScanner(nearestFixed.id);
 }
 
 // ── Compass orientation ───────────────────────────────
@@ -933,7 +955,7 @@ function updateCompass() {
             : '';
           const hintHtml = t.hint ? `<div style="font-size:0.8rem;color:#93c5fd;margin-top:4px">💡 ${t.hint}</div>` : '';
           const inRangeHtml = inRange
-            ? `<button onclick="captureFixedById('${t.id.replace(/'/g,"\\'")}',this)" style="margin-top:8px;width:100%;padding:8px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;font-size:0.85rem">📸 Capturer !</button>`
+            ? `<button onclick="gameMap.closePopup();openQRScanner('${t.id.replace(/'/g,"\\'")}');" style="margin-top:8px;width:100%;padding:8px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;font-size:0.85rem">� Scanner le QR !</button>`
             : `<div style="font-size:0.75rem;color:#64748b;margin-top:6px;text-align:center">${distStr} — approche-toi</div>`;
           const popupContent = `<div style="min-width:220px">${photoHtml}<b style="font-size:0.95rem">${tLabel(t)}</b>${hintHtml}${inRangeHtml}</div>`;
           arrowMarker.bindPopup(popupContent, { maxWidth: 280, className: 'dark-popup' });
@@ -951,10 +973,98 @@ function updateCompass() {
   }
 }
 
+// ── QR Scanner (BarcodeDetector API) ─────────────────
+let qrStream = null;
+let qrAnimFrame = null;
+let qrExpectedId = null;
+let qrDetector = null;
+
+async function openQRScanner(beaconId) {
+  qrExpectedId = beaconId || null;
+  const overlay = document.getElementById('qrOverlay');
+  const video   = document.getElementById('qrVideo');
+  const status  = document.getElementById('qrStatus');
+  status.className = '';
+  status.textContent = '📷 Ouverture de la caméra…';
+  overlay.classList.add('open');
+
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = qrStream;
+    await video.play();
+  } catch(e) {
+    status.textContent = '❌ Caméra inaccessible — vérifie les permissions de l\'app dans les réglages.';
+    status.className = 'qr-err';
+    return;
+  }
+
+  if ('BarcodeDetector' in window) {
+    try {
+      qrDetector = new BarcodeDetector({ formats: ['qr_code'] });
+      status.textContent = '🔍 Pointe vers le QR code de la balise…';
+      _qrScanLoop(video);
+    } catch(e) {
+      _qrFallback(status);
+    }
+  } else {
+    _qrFallback(status);
+  }
+}
+
+function _qrFallback(status) {
+  // BarcodeDetector non disponible (vieux iOS) → instructions natives
+  status.innerHTML = '⚠️ Scan auto non supporté sur cet appareil.<br>Utilise l\'app <strong>Appareil Photo</strong> de ton téléphone pour scanner le QR code.';
+  status.className = 'qr-err';
+}
+
+async function _qrScanLoop(video) {
+  if (!qrDetector || !qrStream || !document.getElementById('qrOverlay').classList.contains('open')) return;
+  try {
+    const barcodes = await qrDetector.detect(video);
+    for (const bc of barcodes) {
+      const raw = bc.rawValue || '';
+      // Extract ID from ?checkin=ID or ?found=ID
+      const match = raw.match(/[?&](?:checkin|found)=([^&\s]+)/);
+      if (match) {
+        const scannedId = decodeURIComponent(match[1]);
+        const status = document.getElementById('qrStatus');
+        if (qrExpectedId && scannedId !== qrExpectedId) {
+          // Wrong beacon
+          status.textContent = '⚠️ Ce QR ne correspond pas à la balise visée. Cherche le bon QR !';
+          status.className = 'qr-err';
+          haptic([80, 60, 80]);
+          await new Promise(r => setTimeout(r, 2000));
+          status.textContent = '🔍 Pointe vers le QR code de la balise…';
+          status.className = '';
+        } else {
+          // Correct!
+          status.textContent = '✅ QR détecté !';
+          status.className = 'qr-ok';
+          haptic([80, 40, 160]);
+          await new Promise(r => setTimeout(r, 400));
+          closeQRScanner();
+          await processFindById(scannedId);
+          return;
+        }
+      }
+    }
+  } catch(e) {}
+  qrAnimFrame = requestAnimationFrame(() => _qrScanLoop(video));
+}
+
+function closeQRScanner() {
+  const overlay = document.getElementById('qrOverlay');
+  overlay.classList.remove('open');
+  if (qrAnimFrame) { cancelAnimationFrame(qrAnimFrame); qrAnimFrame = null; }
+  if (qrStream)    { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+  qrDetector  = null;
+  qrExpectedId = null;
+}
+
 async function captureFixedById(id, btn) {
-  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
-  await processFindById(id);
-  updateCompass();
+  openQRScanner(id);
 }
 
 function toggleCompassArrows() {
