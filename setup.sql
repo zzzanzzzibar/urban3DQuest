@@ -21,7 +21,8 @@ create table treasures (
   visible      boolean default true,
   photo_url    text default '',
   found_by     text default '',   -- fixed: pseudos CSV | unique: pseudo unique
-  found_at     timestamptz
+  found_at     timestamptz,
+  quest        text default ''   -- nom de la quête (filtre admin/joueur)
 );
 
 -- ── Joueurs ───────────────────────────────────────────
