@@ -1047,17 +1047,15 @@ async function openQRScanner(beaconId) {
 async function applyQRZoom(val) {
   qrZoom = parseFloat(val);
   document.getElementById('qrZoomLabel').textContent = qrZoom.toFixed(1) + '×';
-  if (!qrVideoTrack) return;
-  try {
-    const caps = qrVideoTrack.getCapabilities();
-    if (caps.zoom) {
-      await qrVideoTrack.applyConstraints({ advanced: [{ zoom: qrZoom }] });
-    } else {
-      // Digital zoom: scale video via CSS
-      document.getElementById('qrVideo').style.transform = `scale(${qrZoom})`;
-    }
-  } catch(e) {
-    document.getElementById('qrVideo').style.transform = `scale(${qrZoom})`;
+  // Zoom is applied in _qrLoop via canvas crop — no CSS needed
+  // Also try native optical zoom if available
+  if (qrVideoTrack) {
+    try {
+      const caps = qrVideoTrack.getCapabilities();
+      if (caps.zoom && qrZoom <= caps.zoom.max) {
+        await qrVideoTrack.applyConstraints({ advanced: [{ zoom: qrZoom }] });
+      }
+    } catch(e) {}
   }
 }
 
@@ -1066,15 +1064,27 @@ function _qrLoop() {
   const video  = document.getElementById('qrVideo');
   const canvas = document.getElementById('qrCanvas');
   if (!video.videoWidth) { qrAnimFrame = requestAnimationFrame(_qrLoop); return; }
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
+
+  // Crop the center of the frame proportional to zoom level
+  // zoom=1 → full frame ; zoom=4 → center quarter → QR appears 4× bigger for jsQR
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const cropW = Math.round(vw / qrZoom);
+  const cropH = Math.round(vh / qrZoom);
+  const cropX = Math.round((vw - cropW) / 2);
+  const cropY = Math.round((vh - cropH) / 2);
+
+  canvas.width  = cropW;
+  canvas.height = cropH;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // Draw only the cropped center — this is the actual zoom
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  const imageData = ctx.getImageData(0, 0, cropW, cropH);
   const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
   if (code && code.data) {
     _qrHandleResult(code.data);
-    return; // stop loop until handled
+    return;
   }
   qrAnimFrame = requestAnimationFrame(_qrLoop);
 }
@@ -1111,7 +1121,6 @@ async function _qrHandleResult(raw) {
 function closeQRScanner() {
   qrScanning = false;
   document.getElementById('qrOverlay').classList.remove('open');
-  document.getElementById('qrVideo').style.transform = '';
   if (qrAnimFrame)  { cancelAnimationFrame(qrAnimFrame); qrAnimFrame = null; }
   if (qrStream)     { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
   qrVideoTrack = null;
