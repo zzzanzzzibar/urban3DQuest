@@ -1002,18 +1002,21 @@ function formatDuration(sec) {
 
 // ── Leaderboard ──────────────────────────────────────
 async function loadLeaderboard() {
-  // Fetch all events (fixed + unique) with timestamp
-  const [evRes, cfgRes] = await Promise.all([
+  const [evRes, cfgRes, plRes] = await Promise.all([
     db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at').order('created_at', { ascending: true }),
-    db.from('config').select('key,value')
+    db.from('config').select('key,value'),
+    db.from('players').select('pseudo,joined_at')
   ]);
   const events = evRes.data || [];
+  const allPlayers = plRes.data || [];
   const cfg    = Object.fromEntries((cfgRes.data || []).map(r => [r.key, r.value]));
   const rewardMsg = cfg['rewardMessage_' + (activeQuest || '')] || cfg['rewardMessage'] || '';
   const totalFixed = parseInt(cfg.fixedTotal || fixedTotal || 0);
 
   // Group events by player
   const players = {};
+  // Init all registered players with 0
+  allPlayers.forEach(p => { players[p.pseudo] = { fixedEvents: [], uniqueEvents: [] }; });
   events.forEach(e => {
     if (!e.pseudo) return;
     if (!players[e.pseudo]) players[e.pseudo] = { fixedEvents: [], uniqueEvents: [] };
@@ -1072,7 +1075,12 @@ async function loadLeaderboard() {
         ${allDoneStr}
       </div>
     </div>`;
-  }).join('') : '<p style="color:#475569;text-align:center;padding:40px">Personne n\'a encore trouvé de trésor…</p>';
+  }).join('') : (allPlayers.length
+    ? allPlayers.map((p,i) => {
+        const isMe = p.pseudo === myPseudo;
+        return `<div class="lb-row${isMe?' lb-me':''}"><div class="lb-rank">${i+1}</div><div class="lb-body"><div class="lb-name">${p.pseudo}${isMe?' 👈':''}</div><div class="lb-stats" style="color:#475569">0 fixes</div></div></div>`;
+      }).join('')
+    : '<p style="color:#475569;text-align:center;padding:40px">Aucun joueur inscrit pour l\'instant…</p>');
 
   document.getElementById('lbList').innerHTML = html;
   document.getElementById('lbRefresh').textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
