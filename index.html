@@ -486,21 +486,23 @@ function updateHeader() {
 async function loadTreasures() {
   let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
   if (activeQuests.length) {
-    // Include treasures matching active quests OR with no quest assigned (null or empty string)
     const inList = activeQuests.map(aq => `"${aq}"`).join(',');
     q = q.or(`quest.in.(${inList}),quest.is.null`);
   }
-  const { data, error } = await q;
-  if (!data || error) return;
-  // Also include treasures with empty string quest (PostgREST can't filter empty string in .or())
+  const { data } = await q;
+  if (!data) return;
+  let all = data;
+  // Also fetch treasures with empty quest string (PostgREST .or() can't match empty string)
   if (activeQuests.length) {
-    const extra = await db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true).eq('quest', '');
-    if (extra.data && extra.data.length) {
-      const ids = new Set(data.map(t => t.id));
-      extra.data.forEach(t => { if (!ids.has(t.id)) data.push(t); });
+    const { data: extra } = await db.from('treasures')
+      .select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at')
+      .eq('visible', true).eq('quest', '');
+    if (extra && extra.length) {
+      const ids = new Set(all.map(t => t.id));
+      extra.forEach(t => { if (!ids.has(t.id)) all.push(t); });
     }
   }
-  treasures = data;
+  treasures = all;
 }
 
 // ── Map ──────────────────────────────────────────────
@@ -539,12 +541,11 @@ function renderMarkers() {
           return `<div style="min-width:220px">${ph}<b style="font-size:0.95rem">${tLabel(t)}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Balise fixe' : '🎁 Balise unique'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${t.hint}</span>` : ''}${urls.length ? `<br><span style="font-size:0.75em;color:#64748b">👆 Tap photo pour agrandir</span>` : ''}</div>`;
         })();
 
-    // Unique treasures not yet found: L.circle in meters — looks like a dot when zoomed out,
-    // grows into a fuzzy search zone when zoomed in — preserves the mystery
+    // Unique treasures not yet found: circleMarker (pixel radius — always visible regardless of zoom)
     if (t.type === 'unique' && !isMine) {
-      const c = L.circle([t.lat, t.lng], {
-        radius: 20, color, fillColor: color,
-        fillOpacity: 0.25 * opacity, weight: 2, opacity: 0.8 * opacity
+      const c = L.circleMarker([t.lat, t.lng], {
+        radius: 10, color, fillColor: color,
+        fillOpacity: 0.35 * opacity, weight: 2.5, opacity: 0.9 * opacity
       }).addTo(gameMap).bindPopup(popup, { maxWidth: 280, className: 'dark-popup' });
       mapMarkers[t.id] = c;
       return;
