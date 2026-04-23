@@ -33,11 +33,9 @@
     .pseudo-chip{background:#172554;color:#93c5fd;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
     /* ── GPS chip — rose des vents SVG ── */
     #gpsChip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;font-size:0.78rem;font-weight:700;background:#0f172a;border:1.5px solid #334155;color:#94a3b8;cursor:default;transition:all .4s}
-    #gpsDot{width:18px;height:18px;flex-shrink:0;transition:all .4s;display:block}
-    /* Rose des vents inline SVG via background — dessinée en CSS */
-    #gpsDot{background:none;border-radius:0}
+    #gpsDot{width:18px;height:18px;flex-shrink:0;display:block;color:#64748b;transition:color .4s;transform-box:fill-box;transform-origin:center}
     #gpsChip.gps-ok{border-color:#16a34a;color:#4ade80;background:rgba(22,163,74,.12)}
-    #gpsChip.gps-ok #gpsDot{color:#4ade80;animation:compassSpin 8s linear infinite;transform-origin:center}
+    #gpsChip.gps-ok #gpsDot{color:#4ade80;animation:compassSpin 8s linear infinite}
     #gpsChip.gps-mid{border-color:#d97706;color:#fbbf24;background:rgba(217,119,6,.10)}
     #gpsChip.gps-mid #gpsDot{color:#fbbf24}
     #gpsChip.gps-bad{border-color:#dc2626;color:#f87171;background:rgba(220,38,38,.15);animation:pulse .8s infinite}
@@ -184,7 +182,7 @@
 <header>
   <h1>🏙 Urban3DQuest</h1>
   <span id="gpsChip" title="Précision GPS">
-    <svg id="gpsDot" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#64748b">
+    <svg id="gpsDot" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
       <!-- Rose des vents simplifiée -->
       <circle cx="9" cy="9" r="8" stroke="currentColor" stroke-width="1" fill="none" opacity="0.3"/>
       <circle cx="9" cy="9" r="2.5" fill="currentColor"/>
@@ -209,7 +207,7 @@
 <!-- ── Explorer (carte + boussole fusionnées) ────────── -->
 <div id="panelExplore" class="panel active">
   <div id="miniMap" style="position:relative">
-    <button id="arrowToggleBtn" onclick="toggleCompassArrows()" style="position:absolute;bottom:14px;right:10px;z-index:1000;background:rgba(30,58,138,.88);border:2px solid #3b82f6;border-radius:12px;color:#93c5fd;font-size:0.75rem;font-weight:700;padding:7px 12px;cursor:pointer;backdrop-filter:blur(6px)">📌 Balises fixes</button>
+    <button id="arrowToggleBtn" onclick="toggleCompassArrows()" style="position:absolute;bottom:14px;right:10px;z-index:1000;background:rgba(30,58,138,.88);border:2px solid #3b82f6;border-radius:12px;color:#93c5fd;font-size:0.75rem;font-weight:700;padding:7px 12px;cursor:pointer;backdrop-filter:blur(6px)">� Zones chaudes</button>
     <button id="locateMeBtn" onclick="recenterMap()" style="position:absolute;bottom:14px;left:10px;z-index:1000;background:rgba(15,23,42,.88);border:2px solid #334155;border-radius:12px;color:#94a3b8;font-size:1.1rem;padding:7px 11px;cursor:pointer;backdrop-filter:blur(6px);display:none" title="Recentrer sur ma position">📍</button>
     <button id="compassPermBtn" onclick="requestCompassPermission()" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1000;padding:8px 16px;background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;border-radius:12px;color:#fff;font-size:0.82rem;font-weight:700;cursor:pointer;backdrop-filter:blur(6px)">🧭 Activer le compas (iOS)</button>
     <div id="compassDebug" style="display:none;position:absolute;top:10px;left:10px;z-index:1000;font-size:0.68rem;color:#94a3b8;line-height:1.6;padding:8px 12px;background:rgba(15,23,42,.9);border-radius:8px;max-width:220px"></div>
