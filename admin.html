@@ -276,6 +276,9 @@
   <div style="background:#0f2213;border:1px solid #166534;border-radius:12px;padding:14px;margin-bottom:18px">
     <div style="font-weight:700;color:#4ade80;font-size:0.9rem;margin-bottom:10px">📌 QR codes — Balises fixes</div>
     <p style="font-size:0.78rem;color:#94a3b8;margin-bottom:10px">Génère un QR unique (<code>?checkin=&lt;id&gt;</code>) pour chaque balise fixe enregistrée en base. À imprimer avant de poser les balises.</p>
+    <select id="filterQuestQr" style="width:100%;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:9px;color:#f1f5f9;font-size:0.82rem;margin-bottom:10px">
+      <option value="">Toutes les quêtes</option>
+    </select>
     <button class="btn" onclick="generateFixedQRCodes()" style="background:#166534;border:1px solid #4ade80">⚡ Générer les QR balises fixes</button>
     <button class="btn" id="zipFixedBtn" style="background:#1e293b;border:1px solid #334155;display:none" onclick="downloadFixedQrZip()">⬇ Télécharger ZIP (PNG 400px)</button>
     <p id="fixedQrInfo" style="font-size:0.75rem;color:#475569;margin-top:8px;display:none"></p>
@@ -347,7 +350,7 @@ document.getElementById('pwInput').addEventListener('keydown',function(e){if(e.k
 if(sessionStorage.getItem('u3dq_admin')==='1'){document.getElementById('pwScreen').style.display='none';init();}
 async function init(){var r=await db.from('config').select('key').limit(1);document.getElementById('dbDot').className='dot'+(r.error?'':' ok');startGeo();loadConfig();loadQrLov();}
 async function loadQuests(){var res=await db.from('config').select('value').eq('key','quests').single();if(res.data&&res.data.value){try{questList=JSON.parse(res.data.value);}catch(e){questList=[];}}else{questList=[];}var ra=await db.from('config').select('value').eq('key','activeQuest').single();activeQuest=(ra.data&&ra.data.value)||'';populateQuestSelectors();}
-function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'cfgActiveQuest',first:'Toutes (aucun filtre côté joueur)'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';document.getElementById('cfgActiveQuest').value=activeQuest;renderQuestListAdmin();}
+function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'cfgActiveQuest',first:'Toutes (aucun filtre côté joueur)'},{id:'filterQuestQr',first:'Toutes les quêtes'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';document.getElementById('cfgActiveQuest').value=activeQuest;renderQuestListAdmin();}
 function renderQuestListAdmin(){var el=document.getElementById('questListAdmin');if(!questList.length){el.innerHTML='<p style="font-size:0.78rem;color:#475569">Aucune quête définie. Les trésors ne sont pas filtrés par quête.</p>';return;}el.innerHTML=questList.map(function(q,i){return'<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e293b;border-radius:8px;margin-bottom:5px"><span style="flex:1;font-size:0.85rem">'+q+'</span><button onclick="deleteQuest('+i+')" style="padding:4px 10px;background:#450a0a;border:none;border-radius:6px;color:#f87171;cursor:pointer;font-size:0.75rem">Suppr</button></div>';}).join('');}
 async function addQuest(){var inp=document.getElementById('newQuestName');var name=inp.value.trim();if(!name)return;if(questList.indexOf(name)>=0){alert('Cette quête existe déjà.');return;}questList.push(name);inp.value='';await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});populateQuestSelectors();}
 async function deleteQuest(i){if(!confirm('Supprimer la quête "'+questList[i]+'" ? (les trésors liés ne seront pas supprimés)'))return;questList.splice(i,1);await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});if(questList.indexOf(activeQuest)<0)activeQuest='';populateQuestSelectors();}
@@ -473,7 +476,10 @@ async function generateFixedQRCodes(){
   var info=document.getElementById('fixedQrInfo');
   grid.innerHTML='<p style="color:#475569;font-size:0.8rem">Chargement…</p>';
   info.style.display='none';
-  var res=await db.from('treasures').select('id,label,found_by').eq('type','fixed').order('placed_at',{ascending:true});
+  var questFilter=document.getElementById('filterQuestQr')?document.getElementById('filterQuestQr').value:'';
+  var q=db.from('treasures').select('id,label,found_by').eq('type','fixed');
+  if(questFilter)q=q.eq('quest',questFilter);
+  var res=await q.order('placed_at',{ascending:true});
   if(res.error){grid.innerHTML='<p style="color:#f87171">'+res.error.message+'</p>';return;}
   if(!res.data||!res.data.length){grid.innerHTML='<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:16px">Aucune balise fixe enregistrée.</p>';return;}
   grid.innerHTML='';
