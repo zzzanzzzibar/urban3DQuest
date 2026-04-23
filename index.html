@@ -206,6 +206,7 @@ let proximityR   = 100;
 let fixedTotal   = 5;   // total fixed beacons, overridden by config key 'fixedTotal'
 let modeMap      = true;  // show map tab
 let modeCompass  = true;  // show compass tab
+let uniquePoints = 100; // points awarded for finding a unique treasure (configurable)
 let activeTab    = 'explore';
 let deviceHeading = null; // degrees clockwise from north (from device sensor)
 let compassInterval = null;
@@ -344,6 +345,7 @@ async function initGame(pendingFoundId) {
     const c = Object.fromEntries(cfg.map(r => [r.key, r.value]));
     if (c.proximityRadius) proximityR = Number(c.proximityRadius);
     if (c.fixedTotal)      fixedTotal  = Number(c.fixedTotal);
+    if (c.uniquePoints)    uniquePoints = Number(c.uniquePoints);
     if (c.modeMap !== undefined)     modeMap     = c.modeMap !== 'false';
     if (c.modeCompass !== undefined) modeCompass = c.modeCompass !== 'false';
     if (c.gameActive === 'false') showPause();
@@ -448,7 +450,8 @@ function _checkinError(msg) {
 }
 
 function updateHeader() {
-  document.getElementById('headerScore').textContent  = `${myFoundCount} 🏆`;
+  // Show both total points and found count
+  document.getElementById('headerScore').textContent  = `${myScore} pts · ${myFoundCount} 🏆`;
 }
 
 // ── Treasures ────────────────────────────────────────
@@ -481,9 +484,17 @@ function renderMarkers() {
     const color   = isMine ? '#4ade80' : isTaken ? '#475569' : (t.type === 'unique' ? '#c084fc' : '#60a5fa');
     const opacity = isTaken && !isMine ? 0.4 : 1;
 
+    // Small flag overlay for unique treasures
+    const iconHtml = t.type === 'unique'
+      ? `<div style="position:relative;display:inline-block;line-height:0;">
+           <div style=\"background:${color};width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:${opacity}\"></div>
+           <span style=\"position:absolute;top:-6px;right:-6px;font-size:10px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))\">🚩</span>
+         </div>`
+      : `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:${opacity}"></div>`;
+
     const icon = L.divIcon({
-      html: `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:${opacity}"></div>`,
-      className: '', iconSize: [16, 16], iconAnchor: [8, 8]
+      html: iconHtml,
+      className: '', iconSize: [20, 20], iconAnchor: [10, 10]
     });
 
     const popup = isTaken && !isMine
@@ -913,7 +924,9 @@ async function processFindById(treasureId) {
   await db.from('events').insert({ pseudo: myPseudo, treasure_id: t.id, treasure_type: t.type, duration_sec: durationSec });
 
   // Update player score
-  myScore      += durationSec;
+  // For unique treasures we award configurable points instead of duration seconds
+  const pointsToAdd = t.type === 'unique' ? Number(uniquePoints || 0) : durationSec;
+  myScore      += pointsToAdd;
   myFoundCount += 1;
   await db.from('players').update({ score: myScore, found_count: myFoundCount }).eq('pseudo', myPseudo);
 
@@ -975,7 +988,9 @@ function showFoundResult(status, t, durationSec) {
     } else {
       emoji.textContent = '🎁';
       title.textContent = `"${tLabel(t)}" trouvé !`;
-      dur.textContent   = formatDuration(durationSec);
+      // For unique treasures show the points awarded instead of duration
+      const pts = Number(uniquePoints || 0);
+      dur.textContent   = pts ? `${pts} pts` : formatDuration(durationSec);
       desc.textContent  = 'Bravo ! Tu es le premier à l\'avoir récupéré.';
     }
   } else if (status === 'already') {
