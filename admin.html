@@ -69,7 +69,7 @@
     .t-ico-del{background:#450a0a!important;border-color:#7f1d1d!important}
     .t-ico-warn{background:#422006!important;border-color:#78350f!important}
     .t-ico-qr{background:#172554!important;border-color:#1e3a8a!important}
-    #adminMap{height:calc(100vh - 156px - 48px);border-radius:10px;overflow:hidden}
+    #adminMap{height:calc(100vh - 156px - 48px - 46px);border-radius:10px;overflow:hidden}
     .stat-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155;font-size:0.85rem}
     .stat-row:last-child{border:none}
     #pwScreen{position:fixed;inset:0;background:#0f172a;z-index:500;display:flex;align-items:center;justify-content:center}
@@ -190,6 +190,9 @@
 </div>
 <div id="panelMap" class="panel" style="padding:8px">
   <div id="relocateBanner" style="display:none;padding:10px 14px;background:#1c3351;border:1px solid #1d4ed8;border-radius:10px;margin-bottom:8px;font-size:0.82rem;color:#93c5fd;line-height:1.5"></div>
+  <select id="filterQuestMap" onchange="initMap()" style="width:100%;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:9px;color:#f1f5f9;font-size:0.82rem;margin-bottom:8px">
+    <option value="">Toutes les quêtes</option>
+  </select>
   <div id="adminMap"></div>
 </div>
 <div id="panelCfg" class="panel">
@@ -356,7 +359,7 @@ document.getElementById('pwInput').addEventListener('keydown',function(e){if(e.k
 if(sessionStorage.getItem('u3dq_admin')==='1'){document.getElementById('pwScreen').style.display='none';init();}
 async function init(){var r=await db.from('config').select('key').limit(1);document.getElementById('dbDot').className='dot'+(r.error?'':' ok');startGeo();loadConfig();loadQrLov();}
 async function loadQuests(){var res=await db.from('config').select('value').eq('key','quests').single();if(res.data&&res.data.value){try{questList=JSON.parse(res.data.value);}catch(e){questList=[];}}else{questList=[];}var ra=await db.from('config').select('value').eq('key','activeQuests').single();if(ra.data&&ra.data.value){try{activeQuests=JSON.parse(ra.data.value);}catch(e){activeQuests=[];}}else{var old=await db.from('config').select('value').eq('key','activeQuest').single();var ov=(old.data&&old.data.value)||'';activeQuests=ov?[ov]:[];}populateQuestSelectors();}
-function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'filterQuestQr',first:'Toutes les quêtes'},{id:'qrNewQuest',first:'— Aucune quête —'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';renderQuestListAdmin();}
+function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'filterQuestQr',first:'Toutes les quêtes'},{id:'filterQuestMap',first:'Toutes les quêtes'},{id:'qrNewQuest',first:'— Aucune quête —'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';renderQuestListAdmin();}
 function renderQuestListAdmin(){var el=document.getElementById('questListAdmin');if(!questList.length){el.innerHTML='<p style="font-size:0.78rem;color:#475569">Aucune quête définie.</p>';return;}el.innerHTML=questList.map(function(q,i){var on=activeQuests.indexOf(q)>=0;var msg=(rewardMessages[q]||'').replace(/"/g,'&quot;');return '<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;margin-bottom:8px;overflow:hidden">'+'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px">'+'<button onclick="toggleQuestActive(\'' + q.replace(/'/g,"\\'") + '\')" title="'+(on?'Désactiver':'Activer')+' pour les joueurs" style="font-size:1.1rem;background:none;border:none;cursor:pointer;padding:0;line-height:1">'+(on?'🟢':'⚫')+'</button>'+'<span style="flex:1;font-size:0.85rem;font-weight:600">'+q+'</span>'+'<button onclick="deleteQuest('+i+')" style="padding:4px 10px;background:#450a0a;border:none;border-radius:6px;color:#f87171;cursor:pointer;font-size:0.75rem">🗑</button>'+'</div>'+'<div style="padding:0 10px 8px">'+'<input type="text" id="rewardMsg_'+i+'" data-quest="'+q+'" value="'+msg+'" placeholder="Message récompense quand tous les fixes sont trouvés..." '+'style="width:100%;padding:7px 10px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#f1f5f9;font-size:0.78rem;box-sizing:border-box" '+'oninput="rewardMessages[this.dataset.quest]=this.value">'+'</div>'+'</div>';}).join('');}
 async function addQuest(){var inp=document.getElementById('newQuestName');var name=inp.value.trim();if(!name)return;if(questList.indexOf(name)>=0){alert('Cette quête existe déjà.');return;}questList.push(name);inp.value='';await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});populateQuestSelectors();}
 async function deleteQuest(i){if(!confirm('Supprimer la quête "'+questList[i]+'" ? (les trésors liés ne seront pas supprimés)'))return;var qname=questList[i];questList.splice(i,1);delete rewardMessages[qname];activeQuests=activeQuests.filter(function(x){return x!==qname;});await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});await db.from('config').upsert({key:'activeQuests',value:JSON.stringify(activeQuests)});populateQuestSelectors();}
@@ -452,7 +455,10 @@ async function initMap(){
 
   // ── Mode normal ───────────────────────────────────
   banner.style.display='none';
-  var res=await db.from('treasures').select('*');
+  var questFilterMap=document.getElementById('filterQuestMap')?document.getElementById('filterQuestMap').value:'';
+  var q=db.from('treasures').select('*');
+  if(questFilterMap)q=q.eq('quest',questFilterMap);
+  var res=await q;
   if(!res.data||!res.data.length){adminMap.invalidateSize();return;}
   var bounds=[];
   res.data.forEach(function(t){
