@@ -25,7 +25,6 @@
     header{background:#1e293b;padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #334155}
     header h1{font-size:0.88rem;flex:1;color:#94a3b8}
     .pseudo-chip{background:#172554;color:#93c5fd;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
-    .score-chip{background:#052e16;color:#4ade80;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600}
     #gpsChip{display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:20px;font-size:0.72rem;font-weight:600;background:#1e293b;border:1px solid #334155;color:#64748b;cursor:default;transition:all .4s}
     #gpsDot{width:8px;height:8px;border-radius:50%;background:#475569;flex-shrink:0;transition:background .4s}
     #gpsChip.gps-ok{border-color:#16a34a;color:#4ade80}
@@ -101,6 +100,18 @@
     .lb-sep{height:1px;background:#1e293b;margin:4px 0 10px}
     .lb-you-sep{text-align:center;font-size:0.7rem;color:#334155;padding:4px 0 2px}
     .lb-refresh{font-size:0.7rem;color:#334155;text-align:center;padding:10px;margin-top:2px}
+    /* ── My card ── */
+    .my-card{background:linear-gradient(135deg,#1e3a5f,#1a2744);border:2px solid #3b82f6;border-radius:16px;padding:16px 18px;margin-bottom:14px;position:relative}
+    .my-card-rank{position:absolute;top:12px;right:14px;font-size:1.5rem}
+    .my-card-pseudo{font-size:1.05rem;font-weight:800;color:#f1f5f9;margin-bottom:2px}
+    .my-card-sub{font-size:0.78rem;color:#64748b;margin-bottom:10px}
+    .my-card-stats{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+    .my-card-stats strong{font-size:1.1rem;color:#f1f5f9}
+    .my-card-stats span{font-size:0.78rem;color:#94a3b8}
+    .my-card-bar{height:8px;background:#0f172a;border-radius:4px;overflow:hidden;border:1px solid #1e3a5f}
+    .my-card-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#6366f1);border-radius:4px;transition:width .6s ease}
+    .my-card-done{height:100%;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:4px}
+    .lb-divider{font-size:0.68rem;color:#334155;text-transform:uppercase;letter-spacing:.1em;text-align:center;padding:6px 0 8px}
     /* ── QR Modal supprimé ── */
     /* ── Found modal ── */
     #foundModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:700;align-items:center;justify-content:center;padding:24px}
@@ -140,7 +151,6 @@
   <h1>🗺 Urban3DQuest</h1>
   <span id="gpsChip" title="Précision GPS"><span id="gpsDot"></span><span id="gpsLabel">GPS…</span></span>
   <span class="pseudo-chip" id="headerPseudo"></span>
-  <span class="score-chip" id="headerScore">0 🏆</span>
 </header>
 <nav>
   <button id="navExplore" class="active" onclick="showTab('explore',this)">🗺🧭 Explorer</button>
@@ -166,6 +176,7 @@
 
 <!-- ── Leaderboard ───────────────────────────────────── -->
 <div id="panelScores" class="panel">
+  <div id="myCard"></div>
   <div id="lbList"><p style="color:#475569;text-align:center;padding:40px">Chargement…</p></div>
   <div class="lb-refresh" id="lbRefresh"></div>
 </div>
@@ -469,7 +480,6 @@ function _checkinError(msg) {
 }
 
 function updateHeader() {
-  document.getElementById('headerScore').textContent  = `${myFoundCount} 🏆`;
 }
 
 // ── Treasures ────────────────────────────────────────
@@ -1118,11 +1128,44 @@ async function loadLeaderboard() {
   const medals = ['🥇','🥈','🥉'];
   const topClass = ['lb-top1','lb-top2','lb-top3'];
 
+  // ── My personal card ──
+  const myData = rows.find(p => p.pseudo === myPseudo);
+  const myRankNum = myData ? rows.indexOf(myData) + 1 : null;
+  const myCardEl = document.getElementById('myCard');
+  if (myData) {
+    const pct = totalFixed > 0 ? Math.round((myData.fixedCount / totalFixed) * 100) : 0;
+    const rankLabel = myRankNum <= 3 ? medals[myRankNum-1] : `#${myRankNum}`;
+    const fillClass = myData.allFixed ? 'my-card-done' : 'my-card-fill';
+    const timeTxt = myData.allFixed && myData.fixedDuration !== null ? `⏱ ${formatDuration(myData.fixedDuration)}` : '';
+    const uniqTxt = myData.uniqueEvents.length ? `· ${myData.uniqueEvents.length} 🎁 trouvé${myData.uniqueEvents.length>1?'s':''}` : '';
+    const doneTxt = myData.allFixed ? '<span style="color:#4ade80;font-size:0.78rem;font-weight:700">✓ Toutes les balises fixes !</span>' : '';
+    const rewardTxt = myData.allFixed && rewardMsg ? `<div style="margin-top:8px;font-size:0.75rem;color:#4ade80;padding:6px 10px;background:#0d2218;border-radius:8px;border:1px solid #16a34a">📍 ${rewardMsg}</div>` : '';
+    myCardEl.innerHTML = `<div class="my-card">
+      <div class="my-card-rank">${rankLabel}</div>
+      <div class="my-card-pseudo">${myPseudo}</div>
+      <div class="my-card-sub">Ma progression</div>
+      <div class="my-card-stats">
+        <strong>${myData.fixedCount}${totalFixed?'/'+totalFixed:''} 📌</strong>
+        ${timeTxt ? `<span>${timeTxt}</span>` : ''}
+        ${uniqTxt ? `<span>${uniqTxt}</span>` : ''}
+        ${doneTxt}
+      </div>
+      ${totalFixed > 0 ? `<div class="my-card-bar"><div class="${fillClass}" style="width:${pct}%"></div></div>` : ''}
+      ${rewardTxt}
+    </div>`;
+  } else {
+    myCardEl.innerHTML = `<div class="my-card" style="text-align:center;padding:14px">
+      <div class="my-card-pseudo">${myPseudo}</div>
+      <div class="my-card-sub" style="margin-top:4px">Tu n'as pas encore trouvé de trésor — en avant !</div>
+    </div>`;
+  }
+
+
   let html = '';
   if (!rows.length) {
     html = '<p style="color:#475569;text-align:center;padding:50px 20px">🏜 Pas encore de scores<br><span style="font-size:0.8rem">Sois le premier à trouver un trésor !</span></p>';
   } else {
-    html += `<div class="lb-header">🏆 Classement · ${rows.length} joueur${rows.length > 1 ? 's' : ''}</div>`;
+    html += `<div class="lb-divider">🏆 Classement · ${rows.length} joueur${rows.length > 1 ? 's' : ''}</div>`;
 
     // Find my rank
     const myRank = rows.findIndex(p => p.pseudo === myPseudo);
