@@ -221,7 +221,7 @@ let activeTab    = 'explore';
 let deviceHeading = null; // degrees clockwise from north (from device sensor)
 let compassInterval = null;
 let mapCenter    = [45.1885, 5.7245]; // default Grenoble, overridden by config
-let activeQuest  = '';   // empty = all quests visible
+let activeQuests = [];  // empty = all quests visible
 let gameStart    = null;  // Date or null — reference timestamp for score calc
 let gameCode     = '';    // empty = open access
 let playerLat    = null, playerLng = null;
@@ -358,7 +358,8 @@ async function initGame(pendingFoundId) {
     if (c.modeMap !== undefined)     modeMap     = c.modeMap !== 'false';
     if (c.modeCompass !== undefined) modeCompass = c.modeCompass !== 'false';
     if (c.gameActive === 'false') showPause();
-    if (c.activeQuest !== undefined) activeQuest = c.activeQuest || '';
+    if (c.activeQuests) { try { activeQuests = JSON.parse(c.activeQuests); } catch(e) { activeQuests = []; } }
+    else if (c.activeQuest) { activeQuests = c.activeQuest ? [c.activeQuest] : []; }
     if (c.mapCenter) {
       const parts = c.mapCenter.split(',').map(Number);
       if (parts.length === 2 && !isNaN(parts[0])) mapCenter = parts;
@@ -465,7 +466,7 @@ function updateHeader() {
 // ── Treasures ────────────────────────────────────────
 async function loadTreasures() {
   let q = db.from('treasures').select('id,type,lat,lng,label,hint,visible,photo_url,found_by,placed_at').eq('visible', true);
-  if (activeQuest) q = q.eq('quest', activeQuest);
+  if (activeQuests.length) q = q.in('quest', activeQuests);
   const { data } = await q;
   if (!data) return;
   treasures = data;
@@ -993,7 +994,7 @@ function showFoundResult(status, t, durationSec) {
         db.from('config').select('key,value').then(({ data: cfgData }) => {
           if (!cfgData) return;
           const cfg = Object.fromEntries(cfgData.map(r => [r.key, r.value]));
-          const msg = cfg['rewardMessage_' + (activeQuest || '')] || cfg['rewardMessage'] || '';
+          const msg = activeQuests.map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
           if (msg) desc.innerHTML = `🏆 Tu as trouvé toutes les balises fixes !<br><br>📍 <strong>${msg}</strong>`;
         });
       }
@@ -1042,7 +1043,7 @@ async function loadLeaderboard() {
   ]);
   const events = evRes.data || [];
   const cfg    = Object.fromEntries((cfgRes.data || []).map(r => [r.key, r.value]));
-  const rewardMsg = cfg['rewardMessage_' + (activeQuest || '')] || cfg['rewardMessage'] || '';
+  const rewardMsg = activeQuests.map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
   const totalFixed = parseInt(cfg.fixedTotal || fixedTotal || 0);
 
   // Group events by player
