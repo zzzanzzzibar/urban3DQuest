@@ -252,17 +252,26 @@ window.addEventListener('load', async () => {
 
   const params  = new URLSearchParams(location.search);
   const foundId = params.get('found');
+  const checkin = params.get('checkin') === '1';
+
+  // QR universel scanné par un non-joueur → carte de visite
+  if (checkin && !myPseudo) {
+    window.location.replace('https://jadikan.carrd.co/');
+    return;
+  }
 
   // Returning user: skip landing + bgMap entirely
   if (myPseudo) {
     document.getElementById('pseudoScreen').style.display = 'none';
     document.getElementById('bgMap').style.display = 'none';
+    if (checkin) sessionStorage.setItem('pendingCheckin', '1');
     initGame(foundId);
     return;
   }
 
   // New user: show animated landing with bgMap
   if (foundId) sessionStorage.setItem('pendingFound', foundId);
+  if (checkin) sessionStorage.setItem('pendingCheckin', '1');
 
   bgMap = L.map('bgMap', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false, keyboard: false });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(bgMap);
@@ -365,10 +374,57 @@ async function initGame(pendingFoundId) {
     history.replaceState({}, '', location.pathname);
     await processFindById(pendingFoundId);
   }
+
+  // Process QR universel checkin
+  if (sessionStorage.getItem('pendingCheckin')) {
+    sessionStorage.removeItem('pendingCheckin');
+    history.replaceState({}, '', location.pathname);
+    processCheckin();
+  }
+}
+
+// ── QR universel checkin ─────────────────────────────
+function processCheckin() {
+  if (playerLat === null) {
+    let waited = 0;
+    const poll = setInterval(() => {
+      waited += 500;
+      if (playerLat !== null) { clearInterval(poll); _doCheckin(); }
+      else if (waited >= 10000) { clearInterval(poll); _checkinError('GPS indisponible — active la localisation et réessaie.'); }
+    }, 500);
+  } else {
+    _doCheckin();
+  }
+}
+
+function _doCheckin() {
+  const candidates = treasures.filter(t => {
+    if (t.type !== 'fixed') return false;
+    if (t.found_by && t.found_by.split(',').includes(myPseudo)) return false;
+    return true;
+  });
+  if (!candidates.length) { _checkinError('Tu as déjà trouvé toutes les balises fixes ! 🏆'); return; }
+  const nearest = candidates
+    .map(t => ({ ...t, dist: haversine(playerLat, playerLng, t.lat, t.lng) }))
+    .sort((a, b) => a.dist - b.dist)[0];
+  if (nearest.dist > proximityR) {
+    _checkinError(`Tu es à ${Math.round(nearest.dist)}m — trop loin pour valider.\nApproche-toi à moins de ${proximityR}m.`);
+    return;
+  }
+  processFindById(nearest.id);
+}
+
+function _checkinError(msg) {
+  document.getElementById('foundEmoji').textContent = '📍';
+  document.getElementById('foundTitle').textContent = 'QR scanné !';
+  document.getElementById('foundDuration').textContent = '';
+  document.getElementById('foundDesc').textContent = msg;
+  document.getElementById('foundPhotoStrip').style.display = 'none';
+  document.getElementById('foundPhoto').style.display = 'none';
+  document.getElementById('foundModal').classList.add('open');
 }
 
 function updateHeader() {
-  document.getElementById('headerPseudo').textContent = myPseudo;
   document.getElementById('headerScore').textContent  = `${myFoundCount} 🏆`;
 }
 
