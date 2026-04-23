@@ -250,11 +250,12 @@ window.addEventListener('load', async () => {
     }
   }
 
-  const params  = new URLSearchParams(location.search);
-  const foundId = params.get('found');
-  const checkin = params.get('checkin') === '1';
+  const params    = new URLSearchParams(location.search);
+  const foundId   = params.get('found');
+  const checkinId = params.get('checkin') || '';   // ID de la balise fixe (ou '1' legacy)
+  const checkin   = !!checkinId;
 
-  // QR universel scanné par un non-joueur → carte de visite
+  // QR balise scanné par un non-joueur → carte de visite
   if (checkin && !myPseudo) {
     window.location.replace('https://jadikan.carrd.co/');
     return;
@@ -264,14 +265,14 @@ window.addEventListener('load', async () => {
   if (myPseudo) {
     document.getElementById('pseudoScreen').style.display = 'none';
     document.getElementById('bgMap').style.display = 'none';
-    if (checkin) sessionStorage.setItem('pendingCheckin', '1');
+    if (checkin) sessionStorage.setItem('pendingCheckin', checkinId);
     initGame(foundId);
     return;
   }
 
   // New user: show animated landing with bgMap
   if (foundId) sessionStorage.setItem('pendingFound', foundId);
-  if (checkin) sessionStorage.setItem('pendingCheckin', '1');
+  if (checkin) sessionStorage.setItem('pendingCheckin', checkinId);
 
   bgMap = L.map('bgMap', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false, keyboard: false });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(bgMap);
@@ -375,15 +376,17 @@ async function initGame(pendingFoundId) {
     await processFindById(pendingFoundId);
   }
 
-  // Process QR universel checkin
+  // Process QR balise checkin
   if (sessionStorage.getItem('pendingCheckin')) {
+    const cid = sessionStorage.getItem('pendingCheckin');
     sessionStorage.removeItem('pendingCheckin');
+    sessionStorage.setItem('_checkinTargetId', cid);
     history.replaceState({}, '', location.pathname);
     processCheckin();
   }
 }
 
-// ── QR universel checkin ─────────────────────────────
+// ── QR balise checkin ────────────────────────────────
 function processCheckin() {
   if (playerLat === null) {
     let waited = 0;
@@ -398,6 +401,26 @@ function processCheckin() {
 }
 
 function _doCheckin() {
+  const targetId = sessionStorage.getItem('_checkinTargetId') || '';
+  sessionStorage.removeItem('_checkinTargetId');
+
+  // Cas 1 : ID spécifique (QR par balise)
+  if (targetId && targetId !== '1') {
+    const t = treasures.find(t => t.id === targetId);
+    if (!t) { _checkinError('Balise introuvable — elle a peut-être été retirée.'); return; }
+    if (t.found_by && t.found_by.split(',').includes(myPseudo)) {
+      _checkinError('Tu as déjà validé cette balise ! 📌'); return;
+    }
+    const dist = haversine(playerLat, playerLng, t.lat, t.lng);
+    if (dist > proximityR) {
+      _checkinError(`Tu es à ${Math.round(dist)}m de "${tLabel(t)}" — trop loin pour valider.\nApproche-toi à moins de ${proximityR}m.`);
+      return;
+    }
+    processFindById(t.id);
+    return;
+  }
+
+  // Cas 2 : QR générique legacy (checkin=1) → balise la plus proche
   const candidates = treasures.filter(t => {
     if (t.type !== 'fixed') return false;
     if (t.found_by && t.found_by.split(',').includes(myPseudo)) return false;
