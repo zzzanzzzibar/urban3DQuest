@@ -1059,10 +1059,15 @@ function formatDuration(sec) {
 
 // ── Leaderboard ──────────────────────────────────────
 async function loadLeaderboard() {
+  const el = document.getElementById('lbList');
   const [evRes, cfgRes] = await Promise.all([
     db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at').order('created_at', { ascending: true }),
     db.from('config').select('key,value')
   ]);
+  if (evRes.error) {
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">Erreur de chargement — réessaie dans un instant</p>`;
+    return;
+  }
   const events = evRes.data || [];
   const cfg    = Object.fromEntries((cfgRes.data || []).map(r => [r.key, r.value]));
   const rewardMsg = activeQuests.map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
@@ -1131,7 +1136,7 @@ async function loadLeaderboard() {
         ${allDoneStr}
       </div>
     </div>`;
-  }).join('') : '<p style="color:#475569;text-align:center;padding:40px">Personne n\'a encore trouvé de trésor…</p>';
+  }).join('') : '<p style="color:#475569;text-align:center;padding:40px">🏜 Pas encore de scores — sois le premier à trouver un trésor !</p>';
 
   document.getElementById('lbList').innerHTML = html;
   document.getElementById('lbRefresh').textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
