@@ -481,9 +481,16 @@ function renderMarkers() {
     const color   = isMine ? '#4ade80' : isTaken ? '#475569' : (t.type === 'unique' ? '#c084fc' : '#60a5fa');
     const opacity = isTaken && !isMine ? 0.4 : 1;
 
+    // Balises uniques : petit drapeau 🚩 avec point coloré ; balises fixes : point simple
+    const iconHtml = t.type === 'unique'
+      ? `<div style="position:relative;width:20px;height:24px;opacity:${opacity}">
+           <div style="position:absolute;bottom:0;left:2px;background:${color};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5)"></div>
+           <span style="position:absolute;top:0;left:0;font-size:13px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">🚩</span>
+         </div>`
+      : `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:${opacity}"></div>`;
     const icon = L.divIcon({
-      html: `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:${opacity}"></div>`,
-      className: '', iconSize: [16, 16], iconAnchor: [8, 8]
+      html: iconHtml,
+      className: '', iconSize: [20, 24], iconAnchor: [10, 24]
     });
 
     const popup = isTaken && !isMine
