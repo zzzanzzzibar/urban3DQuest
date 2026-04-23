@@ -63,6 +63,12 @@
     .a-ren{background:#1e3a2f;color:#86efac}
     .a-pho{background:#2d1b69;color:#c4b5fd}
     .a-qst{background:#1a2e1a;color:#86efac;border:1px solid #166534!important}
+    .t-hint{font-size:0.72rem;color:#93c5fd;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .t-icon-row{display:flex;gap:3px;margin-top:8px;flex-wrap:wrap}
+    .t-ico{flex:1;min-width:26px;padding:5px 2px;border:1px solid #334155;border-radius:7px;cursor:pointer;font-size:0.95rem;background:#0f172a;text-align:center;line-height:1}
+    .t-ico-del{background:#450a0a!important;border-color:#7f1d1d!important}
+    .t-ico-warn{background:#422006!important;border-color:#78350f!important}
+    .t-ico-qr{background:#172554!important;border-color:#1e3a8a!important}
     #adminMap{height:calc(100vh - 156px - 48px);border-radius:10px;overflow:hidden}
     .stat-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155;font-size:0.85rem}
     .stat-row:last-child{border:none}
@@ -372,9 +378,26 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
     // Compteur joueurs pour balises fixes (trouvées par plusieurs)
     var fixedFoundCount=t.type==='fixed'&&t.found_by?t.found_by.split(',').filter(Boolean).length:0;
     var fixedCountHtml=t.type==='fixed'&&fixedFoundCount?'<div class="t-meta" style="color:#4ade80">👥 '+fixedFoundCount+' joueur'+(fixedFoundCount>1?'s':'')+'</div>':'';
-    return'<div class="t-card">'+photoHtml+'<div class="t-head">'+questBadge+(found&&type!=='fixed'?'<span class="badge b-found">trouvé</span>':'')+(!t.visible?'<span class="badge b-hidden">masqué</span>':'')+'</div>'+'<div class="t-label" id="lbl_'+t.id+'">'+(t.label||(t.type==='fixed'?'Balise fixe':'Trésor unique'))+'</div>'+fixedCountHtml+'<div class="t-meta">'+Number(t.lat).toFixed(4)+', '+Number(t.lng).toFixed(4)+'</div><div class="t-meta">'+date+'</div>'+(found&&type!=='fixed'?'<div class="t-meta" style="color:#4ade80">✓ '+t.found_by+'</div>':'')+'<div class="t-actions"><button class="a-qr" onclick="showQR(\''+t.id+'\',\''+sl+'\',\''+t.type+'\')">QR</button><button class="a-tog" onclick="toggleVis2(\''+t.id+'\','+t.visible+')">'+(t.visible?'Masquer':'Afficher')+'</button>'+resetBtn+'<button class="a-del" onclick="deleteTreasure(\''+t.id+'\',\''+sl+'\',\''+type+'\')">Suppr</button></div>'+'<button class="a-ren" style="width:100%;margin-top:4px;padding:6px 4px;border:none;border-radius:7px;cursor:pointer;font-size:0.68rem;font-weight:600" onclick="renameInline(\''+t.id+'\',\''+sl+'\',\''+type+'\')">✏️ Renommer</button>'+'<button class="a-mov" style="width:100%;margin-top:4px;padding:6px 4px;border:none;border-radius:7px;cursor:pointer;font-size:0.68rem;font-weight:600" onclick="moveOnMap(\''+t.id+'\','+t.lat+','+t.lng+',\''+sl+'\')">📍 Déplacer sur la carte</button>'
-      +(t.type==='fixed'?'<button class="a-pho" style="width:100%;margin-top:4px;padding:6px 4px;border:none;border-radius:7px;cursor:pointer;font-size:0.68rem;font-weight:600" onclick="changePhoto(\''+t.id+'\')">📷 Changer la photo</button>':'')
-      +(t.type==='fixed'?'<button class="a-qst" style="width:100%;margin-top:4px;padding:6px 4px;border:none;border-radius:7px;cursor:pointer;font-size:0.68rem;font-weight:600" onclick="changeQuest(\''+t.id+'\',\''+( t.quest||'').replace(/'/g,"\\'") +'\')">🗂 Changer la quête</button>':'')+'</div>';}).join('');el.innerHTML='<div class="t-grid">'+cards+'</div>';}
+    var sh=(t.hint||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    var hintHtml=t.hint?'<div class="t-hint" id="hint_'+t.id+'">💡 '+t.hint+'</div>':'<div class="t-hint t-hint-empty" id="hint_'+t.id+'"><em style="color:#334155">— pas d\'indice —</em></div>';
+    return'<div class="t-card">'+photoHtml
+      +'<div class="t-head">'+questBadge+(found&&type!=='fixed'?'<span class="badge b-found">trouvé</span>':'')+(!t.visible?'<span class="badge b-hidden">masqué</span>':'')+'</div>'
+      +'<div class="t-label" id="lbl_'+t.id+'">'+(t.label||(t.type==='fixed'?'Balise fixe':'Trésor unique'))+'</div>'
+      +hintHtml
+      +fixedCountHtml
+      +'<div class="t-meta">'+Number(t.lat).toFixed(4)+', '+Number(t.lng).toFixed(4)+' · '+date+'</div>'
+      +(found&&type!=='fixed'?'<div class="t-meta" style="color:#4ade80">✓ '+t.found_by+'</div>':'')
+      +'<div class="t-icon-row">'
+      +'<button class="t-ico" title="Modifier nom &amp; indice" onclick="editInline(\''+t.id+'\',\''+sl+'\',\''+sh+'\',\''+type+'\')">✏️</button>'
+      +'<button class="t-ico" title="Déplacer sur la carte" onclick="moveOnMap(\''+t.id+'\','+t.lat+','+t.lng+',\''+sl+'\')">📍</button>'
+      +(type==='fixed'?'<button class="t-ico" title="Changer la photo" onclick="changePhoto(\''+t.id+'\')">📷</button>':'')
+      +(type==='fixed'?'<button class="t-ico" title="Changer la quête" onclick="changeQuest(\''+t.id+'\',\''+(t.quest||'').replace(/'/g,"\\'") +'\')">🗂</button>':'')
+      +'<button class="t-ico" title="'+(t.visible?'Masquer':'Afficher')+'" onclick="toggleVis2(\''+t.id+'\','+t.visible+')">'+(t.visible?'👁':'🙈')+'</button>'
+      +'<button class="t-ico t-ico-qr" title="Voir QR" onclick="showQR(\''+t.id+'\',\''+sl+'\',\''+t.type+'\')">�</button>'
+      +(found?'<button class="t-ico t-ico-warn" title="Remettre non trouvé" onclick="resetTreasure(\''+t.id+'\',\''+type+'\')">↺</button>':'')
+      +'<button class="t-ico t-ico-del" title="Supprimer" onclick="deleteTreasure(\''+t.id+'\',\''+sl+'\',\''+type+'\')">�</button>'
+      +'</div>'
+      +'</div>';}).join('');el.innerHTML='<div class="t-grid">'+cards+'</div>';}
 async function loadPlayers(){var el=document.getElementById('playersList');el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement…</p>';var rp=await db.from('players').select('pseudo,score,found_count,joined_at').order('found_count',{ascending:false});var re=await db.from('events').select('pseudo,treasure_id,treasure_type,created_at').order('created_at',{ascending:true});var rt=await db.from('treasures').select('id,label,type');if(rp.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+rp.error.message+'</p>';return;}if(!rp.data||!rp.data.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun joueur inscrit</p>';return;}var tLabels={};(rt.data||[]).forEach(function(t){tLabels[t.id]=t.label||(t.type==='fixed'?'Balise fixe':'Trésor unique');});var evByPlayer={};(re.data||[]).forEach(function(e){if(!evByPlayer[e.pseudo])evByPlayer[e.pseudo]=[];evByPlayer[e.pseudo].push(e);});var medals=['🥇','🥈','🥉'];el.innerHTML=rp.data.map(function(p,i){var evs=evByPlayer[p.pseudo]||[];var fixedCount=evs.filter(function(e){return e.treasure_type==='fixed';}).length;var uniqueCount=evs.filter(function(e){return e.treasure_type==='unique';}).length;var joinDate=new Date(p.joined_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});var badges=evs.map(function(e){return'<span class="p-found-badge" title="'+new Date(e.created_at).toLocaleTimeString('fr-FR')+'">'+(e.treasure_type==='fixed'?'📌':'🎁')+(tLabels[e.treasure_id]||e.treasure_id)+'</span>';}).join('');var scoreLabel=fixedCount+' 📌'+(uniqueCount?' · '+uniqueCount+' 🎁':'');return'<div class="p-card"><div class="p-head"><span style="font-size:1.2rem">'+(medals[i]||'#'+(i+1))+'</span><span class="p-name">'+p.pseudo+'</span><span class="p-score">'+scoreLabel+'</span></div><div style="font-size:0.72rem;color:#475569;margin-bottom:6px">Inscrit le '+joinDate+'</div>'+(badges?'<div class="p-found-list">'+badges+'</div>':'<div style="font-size:0.75rem;color:#334155">Aucun trésor trouvé</div>')+'</div>';}).join('');}
 async function toggleVis2(id,current){await db.from('treasures').update({visible:!current}).eq('id',id);}
 async function deleteTreasure(id,label,type){if(!confirm('Supprimer ?'))return;await db.from('treasures').delete().eq('id',id);loadTreasureList(type||'fixed',type==='unique'?'uniqueList':'fixedList');}
@@ -687,14 +710,59 @@ async function onPhotoChangeSelected(evt){
 }
 async function renameInline(id,currentLabel,type){
   var newLabel=prompt('Nouveau nom :',currentLabel||'');
-  if(newLabel===null)return; // cancelled
+  if(newLabel===null)return;
   newLabel=newLabel.trim();
   if(!newLabel)return;
   var res=await db.from('treasures').update({label:newLabel}).eq('id',id);
   if(res.error){alert('Erreur : '+res.error.message);return;}
-  // Update label in DOM immediately without full reload
   var el=document.getElementById('lbl_'+id);
   if(el)el.textContent=newLabel;
+}
+function editInline(id,currentLabel,currentHint,type){
+  var card=document.getElementById('lbl_'+id)?.closest('.t-card');
+  if(!card||card.querySelector('#editform_'+id))return;
+  var lblEl=document.getElementById('lbl_'+id);
+  var hintEl=document.getElementById('hint_'+id);
+  if(lblEl)lblEl.style.display='none';
+  if(hintEl)hintEl.style.display='none';
+  var form=document.createElement('div');
+  form.id='editform_'+id;
+  form.style.cssText='margin:4px 0 6px';
+  form.innerHTML='<input id="ei_lbl_'+id+'" value="'+currentLabel.replace(/"/g,'&quot;')+'" placeholder="Nom" style="width:100%;box-sizing:border-box;padding:5px 8px;background:#0f172a;border:1px solid #475569;border-radius:7px;color:#f1f5f9;font-size:0.8rem;margin-bottom:4px">'
+    +'<input id="ei_hint_'+id+'" value="'+currentHint.replace(/"/g,'&quot;')+'" placeholder="Indice (optionnel)" style="width:100%;box-sizing:border-box;padding:5px 8px;background:#0f172a;border:1px solid #475569;border-radius:7px;color:#f1f5f9;font-size:0.8rem;margin-bottom:5px">'
+    +'<div style="display:flex;gap:4px"><button onclick="saveEdit(\''+id+'\',\''+type+'\')" style="flex:1;padding:5px;background:#166534;border:none;border-radius:6px;color:#4ade80;font-size:0.76rem;cursor:pointer;font-weight:700">✓ OK</button>'
+    +'<button onclick="cancelEdit(\''+id+'\')" style="flex:1;padding:5px;background:#450a0a;border:none;border-radius:6px;color:#f87171;font-size:0.76rem;cursor:pointer">✕</button></div>';
+  lblEl.insertAdjacentElement('afterend',form);
+  var inp=document.getElementById('ei_lbl_'+id);
+  if(inp){inp.focus();inp.select();}
+}
+async function saveEdit(id,type){
+  var lblInput=document.getElementById('ei_lbl_'+id);
+  var hintInput=document.getElementById('ei_hint_'+id);
+  if(!lblInput)return;
+  var newLabel=lblInput.value.trim();
+  var newHint=hintInput?hintInput.value.trim():'';
+  if(!newLabel)return;
+  var res=await db.from('treasures').update({label:newLabel,hint:newHint}).eq('id',id);
+  if(res.error){alert('Erreur : '+res.error.message);return;}
+  var lblEl=document.getElementById('lbl_'+id);
+  var hintEl=document.getElementById('hint_'+id);
+  if(lblEl){lblEl.textContent=newLabel;lblEl.style.display='';}
+  if(hintEl){
+    if(newHint){hintEl.className='t-hint';hintEl.innerHTML='💡 '+newHint;}
+    else{hintEl.className='t-hint t-hint-empty';hintEl.innerHTML='<em style="color:#334155">— pas d\'indice —</em>';}
+    hintEl.style.display='';
+  }
+  var form=document.getElementById('editform_'+id);
+  if(form)form.remove();
+}
+function cancelEdit(id){
+  var form=document.getElementById('editform_'+id);
+  if(form)form.remove();
+  var lblEl=document.getElementById('lbl_'+id);
+  var hintEl=document.getElementById('hint_'+id);
+  if(lblEl)lblEl.style.display='';
+  if(hintEl)hintEl.style.display='';
 }
 function showQR(id,label,type){var url=GAME_BASE_URL+'/'+(type==='fixed'?'?checkin='+id:'?found='+id);document.getElementById('qrLabel').textContent=label||'Tresor';document.getElementById('qrId').textContent=(type==='fixed'?'📌 ':'🎁 ')+id;document.getElementById('qrUrl').textContent=url;var wrap=document.getElementById('qrWrap');wrap.innerHTML='';new QRCode(wrap,{text:url,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});document.getElementById('qrModal').classList.add('open');}
 function closeQR(){document.getElementById('qrModal').classList.remove('open');}
