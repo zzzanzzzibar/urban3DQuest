@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>Urban3DQuest v3</title>
+  <title>Urban3DQuest v4</title>
   <meta name="theme-color" content="#0f172a">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
@@ -141,26 +141,16 @@
     #locateMeBtn{min-height:48px!important;min-width:48px!important;padding:10px!important;transition:transform .1s}
     #locateMeBtn:active{transform:scale(0.9)}
     /* ── QR Scanner overlay ── */
-    #qrOverlay{display:none;position:fixed;inset:0;background:#000;z-index:2000;flex-direction:column}
+    #qrOverlay{display:none;position:fixed;inset:0;background:#0f172a;z-index:2000;flex-direction:column;align-items:center;justify-content:center}
     #qrOverlay.open{display:flex}
-    #qrVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
     #qrCanvas{display:none}
-    #qrScanFrame{position:absolute;top:50%;left:50%;transform:translate(-50%,-55%);width:min(72vw,280px);height:min(72vw,280px);border:none;pointer-events:none}
-    #qrScanFrame::before,#qrScanFrame::after,#qrCornerBL,#qrCornerBR{content:'';position:absolute;width:28px;height:28px;border-color:#fff;border-style:solid}
-    #qrScanFrame::before{top:0;left:0;border-width:3px 0 0 3px;border-radius:4px 0 0 0}
-    #qrScanFrame::after{top:0;right:0;border-width:3px 3px 0 0;border-radius:0 4px 0 0}
-    #qrCornerBL{bottom:0;left:0;border-width:0 0 3px 3px;border-radius:0 0 0 4px}
-    #qrCornerBR{bottom:0;right:0;border-width:0 3px 3px 0;border-radius:0 0 4px 0}
-    #qrScanLine{position:absolute;left:6px;right:6px;height:2px;background:linear-gradient(90deg,transparent,#3b82f6,transparent);animation:qrScan 1.8s ease-in-out infinite}
-    @keyframes qrScan{0%{top:6px;opacity:0}10%{opacity:1}90%{opacity:1}100%{top:calc(100% - 8px);opacity:0}}
-    #qrUI{position:absolute;bottom:0;left:0;right:0;padding:20px 20px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.85) 30%);display:flex;flex-direction:column;align-items:center;gap:12px}
-    #qrStatus{color:#f1f5f9;font-size:0.9rem;font-weight:700;text-align:center;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+    #qrUI{display:flex;flex-direction:column;align-items:center;gap:18px;padding:32px 24px calc(32px + env(safe-area-inset-bottom));width:100%;max-width:420px}
+    #qrStatus{color:#f1f5f9;font-size:1rem;font-weight:700;text-align:center;line-height:1.5}
     #qrStatus.qr-ok{color:#4ade80}
     #qrStatus.qr-err{color:#f87171}
-    #qrZoomWrap{width:100%;display:flex;align-items:center;gap:10px}
-    #qrZoomWrap span{color:#94a3b8;font-size:0.75rem;min-width:32px;text-align:center}
-    #qrZoomSlider{flex:1;-webkit-appearance:none;appearance:none;height:4px;background:#334155;border-radius:4px;outline:none}
-    #qrZoomSlider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer}
+    #qrPreviewWrap{width:100%;border-radius:14px;overflow:hidden;display:none;border:2px solid #334155}
+    #qrPreviewImg{width:100%;display:block;max-height:50vh;object-fit:contain;background:#1e293b}
+    #qrPhotoBtn{display:flex;align-items:center;justify-content:center;gap:10px;padding:16px 0;background:linear-gradient(135deg,#2563eb,#4f46e5);border:none;border-radius:14px;color:#fff;font-size:1.05rem;font-weight:800;cursor:pointer;width:100%;min-height:56px;letter-spacing:.02em;box-shadow:0 4px 20px rgba(37,99,235,.4)}
     #qrCloseBtn{padding:14px 0;background:rgba(30,41,59,.9);border:1px solid #334155;border-radius:12px;color:#f1f5f9;font-size:1rem;font-weight:700;cursor:pointer;min-height:52px;width:100%;backdrop-filter:blur(6px)}
   </style>
 </head>
@@ -251,21 +241,15 @@
 
 <!-- ── QR Scanner overlay ──────────────────────────── -->
 <div id="qrOverlay">
-  <video id="qrVideo" autoplay playsinline muted></video>
   <canvas id="qrCanvas"></canvas>
-  <div id="qrScanFrame">
-    <div id="qrScanLine"></div>
-    <div id="qrCornerBL"></div>
-    <div id="qrCornerBR"></div>
-  </div>
   <div id="qrUI">
-    <div id="qrStatus">📷 Ouverture de la caméra…</div>
-    <div id="qrZoomWrap">
-      <span id="qrZoomLabel">1×</span>
-      <input id="qrZoomSlider" type="range" min="1" max="4" step="0.1" value="1" oninput="applyQRZoom(this.value)">
-      <span>4×</span>
-      <button id="qrTorchBtn" onclick="toggleQRTorch()" style="display:none;background:none;border:1px solid #334155;border-radius:8px;padding:6px 10px;color:#f1f5f9;font-size:1.1rem;cursor:pointer;flex-shrink:0">🔦</button>
-    </div>
+    <div style="font-size:2.5rem">📷</div>
+    <div id="qrStatus">Prends une photo du QR code pour valider la balise</div>
+    <div id="qrPreviewWrap"><img id="qrPreviewImg" alt="preview"></div>
+    <label id="qrPhotoBtn">
+      📷 Prendre une photo
+      <input type="file" accept="image/*" capture="environment" id="qrFileInput" style="display:none" onchange="handleQRPhoto(this)">
+    </label>
     <button id="qrCloseBtn" onclick="closeQRScanner()">✕ Annuler</button>
   </div>
 </div>
@@ -987,156 +971,87 @@ function updateCompass() {
   }
 }
 
-// ── QR Scanner (jsQR multi-scale + torch + autofocus) ─
-let qrStream     = null;
-let qrAnimFrame  = null;
+// ── QR Scanner (photo native) ─────────────────────────
 let qrExpectedId = null;
-let qrVideoTrack = null;
-let qrZoom       = 1;
-let qrScanning   = false;
-let qrTorch      = false;
-let qrLastScan   = 0;
 
-async function openQRScanner(beaconId) {
+function openQRScanner(beaconId) {
   qrExpectedId = beaconId || null;
-  qrScanning   = true;
-  qrTorch      = false;
-  qrZoom       = 1;
   const status = document.getElementById('qrStatus');
-  const slider = document.getElementById('qrZoomSlider');
-  slider.value = 1;
-  document.getElementById('qrZoomLabel').textContent = '1×';
-  document.getElementById('qrTorchBtn').textContent = '🔦';
   status.className = '';
-  status.textContent = '📷 Ouverture de la caméra…';
+  status.textContent = 'Prends une photo du QR code pour valider la balise';
+  document.getElementById('qrPreviewWrap').style.display = 'none';
+  document.getElementById('qrFileInput').value = '';
   document.getElementById('qrOverlay').classList.add('open');
+}
 
-  try {
-    qrStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width:  { ideal: 1920 },
-        height: { ideal: 1080 },
-        focusMode: { ideal: 'continuous' }
-      },
-      audio: false
-    });
-    document.getElementById('qrVideo').srcObject = qrStream;
-    await document.getElementById('qrVideo').play();
-    qrVideoTrack = qrStream.getVideoTracks()[0];
+async function handleQRPhoto(input) {
+  if (!input.files || !input.files[0]) return;
+  const status = document.getElementById('qrStatus');
+  status.className = '';
+  status.textContent = '🔍 Analyse en cours…';
 
-    // Try continuous autofocus
-    try { await qrVideoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch(e) {}
+  const file = input.files[0];
+  const url = URL.createObjectURL(file);
 
-    // Show/hide torch button
-    try {
-      const caps = qrVideoTrack.getCapabilities();
-      document.getElementById('qrTorchBtn').style.display = caps.torch ? 'block' : 'none';
-    } catch(e) { document.getElementById('qrTorchBtn').style.display = 'none'; }
+  // Show preview
+  const previewImg = document.getElementById('qrPreviewImg');
+  previewImg.src = url;
+  document.getElementById('qrPreviewWrap').style.display = 'block';
 
-    status.textContent = '🔍 Centre le QR dans le cadre — approche-toi si nécessaire';
-    _qrSchedule();
-  } catch(e) {
-    status.textContent = '❌ Caméra inaccessible — vérifie les permissions dans les réglages.';
+  const img = new Image();
+  img.onload = async () => {
+    const canvas = document.getElementById('qrCanvas');
+    canvas.width  = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, img.width, img.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+    URL.revokeObjectURL(url);
+    if (code && code.data) {
+      await _qrHandleResult(code.data);
+    } else {
+      status.textContent = '❌ QR non reconnu — réessaie en te rapprochant et en éclairant bien le QR';
+      status.className = 'qr-err';
+      haptic([80, 60, 80]);
+    }
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    status.textContent = '❌ Impossible de lire l\'image';
     status.className = 'qr-err';
-  }
-}
-
-// Throttle : scan every 200ms max (not every frame — too heavy on mobile)
-function _qrSchedule() {
-  if (!qrScanning) return;
-  const now = Date.now();
-  const wait = Math.max(0, 180 - (now - qrLastScan));
-  qrAnimFrame = setTimeout(() => { _qrLoop(); }, wait);
-}
-
-function _qrLoop() {
-  if (!qrScanning || !qrStream) return;
-  qrLastScan = Date.now();
-  const video  = document.getElementById('qrVideo');
-  const canvas = document.getElementById('qrCanvas');
-  if (!video.videoWidth) { _qrSchedule(); return; }
-
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-  // Multi-scale: try 3 crop levels — full, 2×, 4× center crop
-  // Bigger crop zoom = QR occupies more pixels = easier to detect
-  const scales = [1, 2, 4];
-  for (const z of scales) {
-    const effectiveZoom = z * qrZoom;  // combine slider zoom + multi-scale
-    const cropW = Math.min(vw, Math.round(vw / effectiveZoom));
-    const cropH = Math.min(vh, Math.round(vh / effectiveZoom));
-    const cropX = Math.round((vw - cropW) / 2);
-    const cropY = Math.round((vh - cropH) / 2);
-    // Decode at fixed 400px for speed — enough resolution for jsQR
-    const outW = Math.min(cropW, 400);
-    const outH = Math.round(cropH * outW / cropW);
-    canvas.width  = outW;
-    canvas.height = outH;
-    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
-    const img = ctx.getImageData(0, 0, outW, outH);
-    const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-    if (code && code.data) { _qrHandleResult(code.data); return; }
-  }
-  _qrSchedule();
+  };
+  img.src = url;
 }
 
 async function _qrHandleResult(raw) {
   const status = document.getElementById('qrStatus');
   const match  = raw.match(/[?&](?:checkin|found)=([^&\s]+)/);
-  if (!match) { _qrSchedule(); return; }  // not a game QR, keep scanning
+  if (!match) {
+    status.textContent = '⚠️ Ce QR n\'appartient pas au jeu — cherche le bon !';
+    status.className = 'qr-err';
+    haptic([80, 60, 80]);
+    return;
+  }
   const scannedId = decodeURIComponent(match[1]);
 
   if (qrExpectedId && scannedId !== qrExpectedId) {
     status.textContent = '⚠️ Mauvaise balise — cherche le bon QR !';
     status.className = 'qr-err';
     haptic([80, 60, 80]);
-    await new Promise(r => setTimeout(r, 2000));
-    if (!qrScanning) return;
-    status.textContent = '🔍 Centre le QR dans le cadre';
-    status.className = '';
-    _qrSchedule();
   } else {
     status.textContent = '✅ Balise validée !';
     status.className = 'qr-ok';
     haptic([80, 40, 160]);
-    await new Promise(r => setTimeout(r, 350));
+    await new Promise(r => setTimeout(r, 400));
     closeQRScanner();
     await processFindById(scannedId);
   }
 }
 
-async function applyQRZoom(val) {
-  qrZoom = parseFloat(val);
-  document.getElementById('qrZoomLabel').textContent = qrZoom.toFixed(1) + '×';
-  // Try native optical zoom
-  if (qrVideoTrack) {
-    try {
-      const caps = qrVideoTrack.getCapabilities();
-      if (caps.zoom) await qrVideoTrack.applyConstraints({ advanced: [{ zoom: Math.min(qrZoom, caps.zoom.max) }] });
-    } catch(e) {}
-  }
-}
-
-async function toggleQRTorch() {
-  if (!qrVideoTrack) return;
-  qrTorch = !qrTorch;
-  try {
-    await qrVideoTrack.applyConstraints({ advanced: [{ torch: qrTorch }] });
-    document.getElementById('qrTorchBtn').textContent = qrTorch ? '💡' : '🔦';
-  } catch(e) { qrTorch = false; }
-}
-
 function closeQRScanner() {
-  qrScanning = false;
   document.getElementById('qrOverlay').classList.remove('open');
-  if (qrAnimFrame)  { clearTimeout(qrAnimFrame); qrAnimFrame = null; }
-  if (qrStream)     { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
-  qrVideoTrack = null;
   qrExpectedId = null;
-  qrZoom = 1;
 }
 
 async function captureFixedById(id) {
