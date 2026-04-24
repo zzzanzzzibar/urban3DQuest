@@ -248,7 +248,7 @@
     <div id="qrPreviewWrap"><img id="qrPreviewImg" alt="preview"></div>
     <label id="qrPhotoBtn">
       📷 Prendre une photo
-      <input type="file" accept="image/*" capture="environment" id="qrFileInput" style="display:none" onchange="handleQRPhoto(this)">
+      <input type="file" accept="image/*" capture="environment" id="qrFileInput" style="display:none">
     </label>
     <button id="qrCloseBtn" onclick="closeQRScanner()">✕ Annuler</button>
   </div>
@@ -292,8 +292,7 @@ let gameCode     = '';    // empty = open access
 let playerLat    = null, playerLng = null;
 let playerAccuracy = null; // GPS accuracy in meters
 let gpsHistory   = []; // last N positions for smoothing
-let scanner      = null; // unused, kept for compat
-let nearestFixed = null; // fixed beacon currently in capture range
+let nearestFixed = null;
 let lbInterval   = null;
 let geoWatch     = null;
 let lastHapticZone = null;
@@ -302,17 +301,14 @@ let compassArrowMode = true; // toggle: show direction arrows on minimap
 let mapFollowing = true; // true = map follows GPS, false = user is panning freely
 let lastArrowLat = null, lastArrowLng = null, lastArrowHeading = null; // throttle
 
-// ── Device token for pseudo ownership ────────────────
-function getDeviceToken() {
-  let t = localStorage.getItem('u3dq_token');
-  if (!t) { t = crypto.randomUUID(); localStorage.setItem('u3dq_token', t); }
-  return t;
-}
-
 // ── Startup ──────────────────────────────────────────
 let bgMap = null;
 
 window.addEventListener('load', async () => {
+  // Attach QR file input handler (cloneNode approach requires JS init)
+  const qrInput = document.getElementById('qrFileInput');
+  if (qrInput) qrInput.addEventListener('change', () => handleQRPhoto(qrInput));
+
   // Pre-fetch config to get mapCenter + gameCode for landing screen
   const { data: cfgData } = await db.from('config').select('key,value').in('key',['mapCenter','gameCode']);
   if (cfgData) {
@@ -585,7 +581,7 @@ function renderMarkers() {
       : (() => {
           const urls = getPhotoUrls(t.photo_url);
           const ph = urls.map(u =>
-            `<img src="${u}" onclick="openPhotoViewer('${u}')" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;cursor:zoom-in">`
+            `<img src="${u}" onclick="openPhotoViewer('${u.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;cursor:zoom-in">`
           ).join('');
           return `<div style="min-width:220px">${ph}<b style="font-size:0.95rem">${tLabel(t)}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Balise fixe' : '🎁 Balise unique'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${t.hint}</span>` : ''}${urls.length ? `<br><span style="font-size:0.75em;color:#64748b">👆 Tap photo pour agrandir</span>` : ''}</div>`;
         })();
@@ -980,8 +976,21 @@ function openQRScanner(beaconId) {
   status.className = '';
   status.textContent = 'Prends une photo du QR code pour valider la balise';
   document.getElementById('qrPreviewWrap').style.display = 'none';
-  document.getElementById('qrFileInput').value = '';
+  _resetQRInput();
   document.getElementById('qrOverlay').classList.add('open');
+}
+
+function _resetQRInput() {
+  // Clone input to guarantee onchange fires even if same file is re-selected (iOS bug)
+  const old = document.getElementById('qrFileInput');
+  const fresh = document.createElement('input');
+  fresh.type = 'file';
+  fresh.accept = 'image/*';
+  fresh.setAttribute('capture', 'environment');
+  fresh.id = 'qrFileInput';
+  fresh.style.display = 'none';
+  fresh.addEventListener('change', () => handleQRPhoto(fresh));
+  old.parentNode.replaceChild(fresh, old);
 }
 
 async function handleQRPhoto(input) {
@@ -1000,20 +1009,29 @@ async function handleQRPhoto(input) {
 
   const img = new Image();
   img.onload = async () => {
-    const canvas = document.getElementById('qrCanvas');
-    canvas.width  = img.width;
-    canvas.height = img.height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0);
-    const imageData = ctx.getImageData(0, 0, img.width, img.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-    URL.revokeObjectURL(url);
-    if (code && code.data) {
-      await _qrHandleResult(code.data);
-    } else {
-      status.textContent = '❌ QR non reconnu — réessaie en te rapprochant et en éclairant bien le QR';
+    try {
+      const canvas = document.getElementById('qrCanvas');
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+      URL.revokeObjectURL(url);
+      if (code && code.data) {
+        await _qrHandleResult(code.data);
+      } else {
+        status.textContent = '❌ QR non reconnu — réessaie en te rapprochant et en éclairant bien le QR';
+        status.className = 'qr-err';
+        haptic([80, 60, 80]);
+        _resetQRInput(); // allow retrying immediately on iOS
+      }
+    } catch(err) {
+      URL.revokeObjectURL(url);
+      status.textContent = '❌ Erreur analyse — réessaie';
       status.className = 'qr-err';
-      haptic([80, 60, 80]);
+      console.error('QR decode error:', err);
+      _resetQRInput();
     }
   };
   img.onerror = () => {
@@ -1093,8 +1111,19 @@ function toggleCompassDebug() {
 
 
 
-// ── Process find ─────────────────────────────────────
+let _processingFind = false;
+
 async function processFindById(treasureId) {
+  if (_processingFind) return;
+  _processingFind = true;
+  try {
+    await _doProcessFind(treasureId);
+  } finally {
+    _processingFind = false;
+  }
+}
+
+async function _doProcessFind(treasureId) {
   // Fetch treasure fresh from DB
   const { data: t, error } = await db.from('treasures').select('*').eq('id', treasureId).single();
   if (error || !t) { _checkinError('Trésor introuvable — il a peut-être été retiré.'); return; }
@@ -1322,6 +1351,11 @@ async function loadLeaderboard() {
     const myRank = rows.findIndex(p => p.pseudo === myPseudo);
 
     rows.forEach((p, i) => {
+      // If > 10 players: show top 10 + separator + my row
+      const myRankInList = rows.findIndex(r => r.pseudo === myPseudo);
+      if (i >= 10 && i !== myRankInList) return;
+      if (i === 10 && myRankInList >= 10) html += `<div class="lb-you-sep">· · ·</div>`;
+
       const isMe = p.pseudo === myPseudo;
       const rankIcon = i < 3 ? medals[i] : `<span style="font-size:0.85rem;color:#475569;font-weight:700">${i+1}</span>`;
       const extraClass = i < 3 ? topClass[i] : '';
@@ -1362,11 +1396,6 @@ async function loadLeaderboard() {
           ${rewardLine}
         </div>
       </div>`;
-
-      // If I'm not in top visible area, add separator before my row
-      if (i === Math.min(rows.length - 1, 9) && myRank > 10) {
-        html += `<div class="lb-you-sep">· · ·</div>`;
-      }
     });
   }
 
