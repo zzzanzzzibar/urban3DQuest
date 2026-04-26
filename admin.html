@@ -107,15 +107,13 @@
   <div id="pwBox">
     <h2>Urban3DQuest</h2>
     <p>Interface administrateur</p>
-    <input type="email" id="adminEmail" placeholder="Email admin" autocomplete="username" autocapitalize="off" style="margin-bottom:8px">
-    <input type="password" id="adminPassword" placeholder="Mot de passe" autocomplete="current-password">
+    <input type="password" id="pwInput" placeholder="Mot de passe admin" autocomplete="off">
     <button class="btn" onclick="checkPw()">Entrer</button>
-    <p id="pwErr" style="color:#f87171;font-size:0.78rem;margin-top:8px;display:none">Connexion refusée</p>
+    <p id="pwErr" style="color:#f87171;font-size:0.78rem;margin-top:8px;display:none">Mot de passe incorrect</p>
   </div>
 </div>
 <header>
   <h1 id="adminTitle">Urban3DQuest Admin</h1>
-  <button id="logoutBtn" onclick="logoutAdmin()" style="display:none;padding:6px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#cbd5e1;cursor:pointer;font-size:0.75rem">Déconnexion</button>
   <span class="dot" id="dbDot"></span>
 </header>
 <nav>
@@ -350,58 +348,18 @@
 var SUPABASE_URL='https://jocfvobqfpygixrawnbq.supabase.co';
 var SUPABASE_KEY='sb_publishable_M8SxhXrmh17vrOf1WlOM6Q_ZNKNqQhM';
 var GAME_BASE_URL='https://zzzanzzzibar.github.io/urban3DQuest';
+var ADMIN_PW='Urban2026!';
 var ADMIN_UI_VERSION='v3.1';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='fixed',visVisible=true,gameActive=true,modeMap=true,modeCompass=true,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
-var _adminInited=false;
 var _adminTitle=document.getElementById('adminTitle');
 if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION;
 function escHtml(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function safeImgUrl(v){var s=String(v||'').trim();if(!s)return'';if(/^(https?:|data:image\/)/i.test(s))return s;return'';}
 function csvCell(v){var s=String(v??'');if(/^[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
-function showAuthError(msg){var err=document.getElementById('pwErr');err.textContent=msg;err.style.display='block';}
-function hideAuthError(){document.getElementById('pwErr').style.display='none';}
-async function ensureAdminRole(){
-  var r=await db.rpc('is_admin');
-  if(r.error){showAuthError('Sécurité SQL non appliquée (fonction is_admin manquante). Applique setup_secure_rls.sql.');return false;}
-  if(!r.data){showAuthError('Compte authentifié mais non autorisé admin.');return false;}
-  return true;
-}
-async function activateAdminSession(){
-  hideAuthError();
-  if(!await ensureAdminRole()){await db.auth.signOut();return;}
-  document.getElementById('pwScreen').style.display='none';
-  document.getElementById('logoutBtn').style.display='inline-block';
-  if(!_adminInited){_adminInited=true;init();}
-}
-async function checkPw(){
-  hideAuthError();
-  var email=(document.getElementById('adminEmail').value||'').trim();
-  var password=document.getElementById('adminPassword').value||'';
-  if(!email||!password){showAuthError('Email et mot de passe requis.');return;}
-  var btn=document.querySelector('#pwBox .btn');
-  btn.disabled=true;btn.textContent='Connexion...';
-  var res=await db.auth.signInWithPassword({email:email,password:password});
-  btn.disabled=false;btn.textContent='Entrer';
-  if(res.error){showAuthError('Connexion refusée : '+res.error.message);return;}
-  await activateAdminSession();
-}
-async function logoutAdmin(){
-  await db.auth.signOut();
-  _adminInited=false;
-  document.getElementById('logoutBtn').style.display='none';
-  document.getElementById('pwScreen').style.display='flex';
-}
-document.getElementById('adminPassword').addEventListener('keydown',function(e){if(e.key==='Enter')checkPw();});
-document.getElementById('adminEmail').addEventListener('keydown',function(e){if(e.key==='Enter')checkPw();});
-db.auth.onAuthStateChange(function(_evt,session){
-  if(session){activateAdminSession();}
-  else{_adminInited=false;document.getElementById('logoutBtn').style.display='none';document.getElementById('pwScreen').style.display='flex';}
-});
-(async function bootstrapAuth(){
-  var s=await db.auth.getSession();
-  if(s.data&&s.data.session){await activateAdminSession();}
-})();
+function checkPw(){if(document.getElementById('pwInput').value===ADMIN_PW){sessionStorage.setItem('u3dq_admin','1');document.getElementById('pwScreen').style.display='none';init();}else{document.getElementById('pwErr').style.display='block';}}
+document.getElementById('pwInput').addEventListener('keydown',function(e){if(e.key==='Enter')checkPw();});
+if(sessionStorage.getItem('u3dq_admin')==='1'){document.getElementById('pwScreen').style.display='none';init();}
 async function init(){var r=await db.from('config').select('key').limit(1);document.getElementById('dbDot').className='dot'+(r.error?'':' ok');startGeo();loadConfig();loadQrLov();}
 async function loadQuests(){var res=await db.from('config').select('value').eq('key','quests').single();if(res.data&&res.data.value){try{questList=JSON.parse(res.data.value);}catch(e){questList=[];}}else{questList=[];}var ra=await db.from('config').select('value').eq('key','activeQuests').single();if(ra.data&&ra.data.value){try{activeQuests=JSON.parse(ra.data.value);}catch(e){activeQuests=[];}}else{var old=await db.from('config').select('value').eq('key','activeQuest').single();var ov=(old.data&&old.data.value)||'';activeQuests=ov?[ov]:[];}populateQuestSelectors();}
 function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'filterQuestQr',first:'Toutes les quêtes'},{id:'filterQuestMap',first:'Toutes les quêtes'},{id:'qrNewQuest',first:'— Aucune quête —'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';renderQuestListAdmin();}
