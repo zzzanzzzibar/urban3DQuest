@@ -171,6 +171,7 @@
     </div>
     <p id="pseudoErr" style="color:#f87171;font-size:0.78rem;margin-bottom:10px;display:none"></p>
     <button class="btn-main" id="startBtn" onclick="startGame()">🚀 Rejoindre le jeu</button>
+    <button class="btn-main" id="guestBtn" onclick="continueAsGuest()" style="margin-top:10px;background:#1e293b;border:1px solid #334155">👀 Voir la carte en invité</button>
   </div>
 </div>
 
@@ -405,6 +406,21 @@ async function startGame() {
   const pending = sessionStorage.getItem('pendingFound');
   sessionStorage.removeItem('pendingFound');
   initGame(pending);
+}
+
+async function continueAsGuest() {
+  const err = document.getElementById('pseudoErr');
+  // Keep access-code protection if configured, even for guest browsing.
+  if (gameCode) {
+    const entered = (document.getElementById('gameCodeInput').value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if (entered !== gameCode) { err.textContent = 'Code d\'accès incorrect.'; err.style.display = 'block'; return; }
+  }
+  err.style.display = 'none';
+  hideLanding();
+  sessionStorage.removeItem('pendingFound');
+  sessionStorage.removeItem('pendingCheckin');
+  history.replaceState({}, '', location.pathname);
+  initGame(null);
 }
 
 // ── Init game ────────────────────────────────────────
@@ -750,6 +766,15 @@ function updateRadar() {
   const bar = document.getElementById('radarBar');
   const fab = document.getElementById('captureFab');
 
+  if (!myPseudo) {
+    bar.textContent = '👀 Mode invité — exploration carte uniquement';
+    bar.className = '';
+    fab.style.display = 'none';
+    nearestFixed = null;
+    lastHapticZone = null;
+    return;
+  }
+
   // GPS accuracy warning
   const accStr = playerAccuracy ? ` · GPS ±${Math.round(playerAccuracy)}m` : '';
   const gpsWeak = playerAccuracy && playerAccuracy > 40;
@@ -821,6 +846,7 @@ function updateRadar() {
 }
 
 async function captureFixed() {
+  if (!myPseudo) { _checkinError('Mode invité: connecte-toi pour capturer une balise.'); return; }
   if (!nearestFixed) return;
   haptic([50, 30, 50]);
   openQRScanner(nearestFixed.id);
@@ -889,7 +915,7 @@ function _attachOrientationListeners() {
 
 function updateProgressBar() {
   const bar = document.getElementById('progressBar');
-  if (!myPseudo) return;
+  if (!myPseudo) { bar.style.display = 'none'; return; }
   bar.style.display = 'block';
   const myFixedFound = treasures.filter(t =>
     t.type === 'fixed' &&
@@ -1191,6 +1217,7 @@ async function processFindById(treasureId) {
 }
 
 async function _doProcessFind(treasureId) {
+  if (!myPseudo) { _checkinError('Mode invité: connecte-toi pour valider une balise.'); return; }
   // Fetch treasure fresh from DB
   const { data: t, error } = await db.from('treasures').select('*').eq('id', treasureId).single();
   if (error || !t) { _checkinError('Trésor introuvable — il a peut-être été retiré.'); return; }
@@ -1391,6 +1418,7 @@ async function loadLeaderboard() {
   const myData = rows.find(p => p.pseudo === myPseudo);
   const myRankNum = myData ? rows.indexOf(myData) + 1 : null;
   const myCardEl = document.getElementById('myCard');
+  myCardEl.style.display = myPseudo ? 'block' : 'none';
   if (myData) {
     const pct = totalFixed > 0 ? Math.round((myData.fixedCount / totalFixed) * 100) : 0;
     const rankLabel = myRankNum <= 3 ? medals[myRankNum-1] : `#${myRankNum}`;
@@ -1521,7 +1549,6 @@ function showPause() { document.getElementById('pauseScreen').classList.add('ope
 
 // ── Periodic refresh (treasures + config) ────────────
 setInterval(async () => {
-  if (!myPseudo) return;
   const { data: cfg } = await db.from('config').select('*');
   if (cfg) {
     const c = Object.fromEntries(cfg.map(r => [r.key, r.value]));
