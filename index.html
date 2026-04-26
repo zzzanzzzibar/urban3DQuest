@@ -565,6 +565,26 @@ function initMap() {
 
 function getPhotoUrls(raw){if(!raw)return[];if(raw.charAt(0)==='['){try{return JSON.parse(raw).filter(Boolean);}catch(e){}}return[raw];}
 
+function escHtml(v){
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeImgUrl(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  if (/^(https?:|data:image\/)/i.test(s)) return s;
+  return '';
+}
+
+function jsSingleQuoted(v) {
+  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 function renderMarkers() {
   Object.values(mapMarkers).forEach(m => gameMap.removeLayer(m));
   mapMarkers = {};
@@ -578,13 +598,14 @@ function renderMarkers() {
     const opacity = isTaken && !isMine ? 0.4 : 1;
 
     const popup = isTaken && !isMine
-      ? `<b>${tLabel(t)}</b><br>🔒 Déjà récupéré`
+      ? `<b>${escHtml(tLabel(t))}</b><br>🔒 Déjà récupéré`
       : (() => {
           const urls = getPhotoUrls(t.photo_url);
-          const ph = urls.map(u =>
-            `<img src="${u}" onclick="openPhotoViewer('${u.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;cursor:zoom-in">`
+          const safeUrls = urls.map(safeImgUrl).filter(Boolean);
+          const ph = safeUrls.map(u =>
+            `<img src="${escHtml(u)}" onclick="openPhotoViewer('${jsSingleQuoted(u)}')" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;cursor:zoom-in">`
           ).join('');
-          return `<div style="min-width:220px">${ph}<b style="font-size:0.95rem">${tLabel(t)}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Balise fixe' : '🎁 Balise unique'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${t.hint}</span>` : ''}${urls.length ? `<br><span style="font-size:0.75em;color:#64748b">👆 Tap photo pour agrandir</span>` : ''}</div>`;
+          return `<div style="min-width:220px">${ph}<b style="font-size:0.95rem">${escHtml(tLabel(t))}</b><br><span style="font-size:0.82em;color:#888">${t.type === 'fixed' ? '📌 Balise fixe' : '🎁 Balise unique'}</span>${t.hint ? `<br><span style="font-size:0.82em;color:#93c5fd">💡 ${escHtml(t.hint)}</span>` : ''}${safeUrls.length ? `<br><span style="font-size:0.75em;color:#64748b">👆 Tap photo pour agrandir</span>` : ''}</div>`;
         })();
 
     // Unique treasures not yet found: fuzzy circle — center is randomly OFFSET from
@@ -945,14 +966,14 @@ function updateCompass() {
           // Popup with hint + photo on arrow click
           const photos = getPhotoUrls(t.photo_url);
           const photoHtml = photos.length
-            ? photos.map(u => `<img src="${u}" onclick="openPhotoViewer('${u.replace(/'/g,"\\'")}')" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;cursor:zoom-in">`).join('')
+            ? photos.map(safeImgUrl).filter(Boolean).map(u => `<img src="${escHtml(u)}" onclick="openPhotoViewer('${jsSingleQuoted(u)}')" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;cursor:zoom-in">`).join('')
               + `<div style="font-size:0.72rem;color:#64748b;margin-bottom:6px">👆 Tap photo pour agrandir</div>`
             : '';
-          const hintHtml = t.hint ? `<div style="font-size:0.8rem;color:#93c5fd;margin-top:4px">💡 ${t.hint}</div>` : '';
+          const hintHtml = t.hint ? `<div style="font-size:0.8rem;color:#93c5fd;margin-top:4px">💡 ${escHtml(t.hint)}</div>` : '';
           const inRangeHtml = inRange
             ? `<button onclick="gameMap.closePopup();openQRScanner('${t.id.replace(/'/g,"\\'")}');" style="margin-top:8px;width:100%;padding:8px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;font-size:0.85rem">� Scanner le QR !</button>`
             : `<div style="font-size:0.75rem;color:#64748b;margin-top:6px;text-align:center">${distStr} — approche-toi</div>`;
-          const popupContent = `<div style="min-width:220px">${photoHtml}<b style="font-size:0.95rem">${tLabel(t)}</b>${hintHtml}${inRangeHtml}</div>`;
+          const popupContent = `<div style="min-width:220px">${photoHtml}<b style="font-size:0.95rem">${escHtml(tLabel(t))}</b>${hintHtml}${inRangeHtml}</div>`;
           arrowMarker.bindPopup(popupContent, { maxWidth: 280, className: 'dark-popup' });
 
           const labelIcon = L.divIcon({
@@ -1190,7 +1211,18 @@ async function _doProcessFind(treasureId) {
   // Update treasure found_by
   const newFoundBy = t.type === 'unique' ? myPseudo : [...foundList, myPseudo].join(',');
   const updatePayload = { found_by: newFoundBy, found_at: new Date().toISOString() };
-  await db.from('treasures').update(updatePayload).eq('id', t.id);
+  const updateQ = db.from('treasures').update(updatePayload).eq('id', t.id);
+  const { error: updateError, data: updatedRows } = t.type === 'unique'
+    ? await updateQ.eq('found_by', '').select('id')
+    : await updateQ.select('id');
+  if (updateError || !updatedRows || !updatedRows.length) {
+    if (t.type === 'unique') {
+      showFoundResult('taken', t);
+    } else {
+      _checkinError('Validation impossible pour le moment. Réessaie dans quelques secondes.');
+    }
+    return;
+  }
 
   // Log event
   await db.from('events').insert({ pseudo: myPseudo, treasure_id: t.id, treasure_type: t.type, duration_sec: durationSec });
@@ -1227,7 +1259,7 @@ function showFoundResult(status, t, durationSec) {
   if (status === 'success') {
     const photos = getPhotoUrls(t.photo_url);
     if (photos.length) {
-      photoStrip.innerHTML = photos.map(url => `<img src="${url}" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-bottom:6px;display:block">`).join('');
+      photoStrip.innerHTML = photos.map(safeImgUrl).filter(Boolean).map(url => `<img src="${escHtml(url)}" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-bottom:6px;display:block">`).join('');
       photoStrip.style.display = 'block';
     } else { photoStrip.style.display = 'none'; }
   } else { photoStrip.style.display = 'none'; }
@@ -1252,7 +1284,7 @@ function showFoundResult(status, t, durationSec) {
           if (!cfgData) return;
           const cfg = Object.fromEntries(cfgData.map(r => [r.key, r.value]));
           const msg = activeQuests.map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
-          if (msg) desc.innerHTML = `🏆 Tu as trouvé toutes les balises fixes !<br><br>📍 <strong>${msg}</strong>`;
+          if (msg) desc.innerHTML = `🏆 Tu as trouvé toutes les balises fixes !<br><br>📍 <strong>${escHtml(msg)}</strong>`;
         });
       }
     } else {
@@ -1303,17 +1335,18 @@ async function loadLeaderboard() {
       db.from('config').select('key,value')
     ]);
   } catch(netErr) {
-    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur réseau : ${netErr.message}</p>`;
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur réseau : ${escHtml(netErr.message)}</p>`;
     return;
   }
   if (evRes.error) {
-    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur Supabase : ${evRes.error.message}</p>`;
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur Supabase : ${escHtml(evRes.error.message)}</p>`;
     return;
   }
   try {
   const events = evRes.data || [];
   const cfg    = Object.fromEntries((cfgRes.data || []).map(r => [r.key, r.value]));
   const rewardMsg = (activeQuests || []).map(q => cfg['rewardMessage_'+q]).find(m => m) || cfg['rewardMessage'] || '';
+  const safeRewardMsg = escHtml(rewardMsg);
   const totalFixed = parseInt(cfg.fixedTotal || fixedTotal || 0);
 
   // Group events by player
@@ -1365,10 +1398,10 @@ async function loadLeaderboard() {
     const timeTxt = myData.allFixed && myData.fixedDuration !== null ? `⏱ ${formatDuration(myData.fixedDuration)}` : '';
     const uniqTxt = myData.uniqueEvents.length ? `· ${myData.uniqueEvents.length} 🎁 trouvé${myData.uniqueEvents.length>1?'s':''}` : '';
     const doneTxt = myData.allFixed ? '<span style="color:#4ade80;font-size:0.78rem;font-weight:700">✓ Toutes les balises fixes !</span>' : '';
-    const rewardTxt = myData.allFixed && rewardMsg ? `<div style="margin-top:8px;font-size:0.75rem;color:#4ade80;padding:6px 10px;background:#0d2218;border-radius:8px;border:1px solid #16a34a">📍 ${rewardMsg}</div>` : '';
+    const rewardTxt = myData.allFixed && rewardMsg ? `<div style="margin-top:8px;font-size:0.75rem;color:#4ade80;padding:6px 10px;background:#0d2218;border-radius:8px;border:1px solid #16a34a">📍 ${safeRewardMsg}</div>` : '';
     myCardEl.innerHTML = `<div class="my-card">
       <div class="my-card-rank">${rankLabel}</div>
-      <div class="my-card-pseudo">${myPseudo}</div>
+      <div class="my-card-pseudo">${escHtml(myPseudo)}</div>
       <div class="my-card-sub">Ma progression</div>
       <div class="my-card-stats">
         <strong>${myData.fixedCount}${totalFixed?'/'+totalFixed:''} 📌</strong>
@@ -1381,7 +1414,7 @@ async function loadLeaderboard() {
     </div>`;
   } else {
     myCardEl.innerHTML = `<div class="my-card" style="text-align:center;padding:14px">
-      <div class="my-card-pseudo">${myPseudo}</div>
+      <div class="my-card-pseudo">${escHtml(myPseudo)}</div>
       <div class="my-card-sub" style="margin-top:4px">Tu n'as pas encore trouvé de trésor — en avant !</div>
     </div>`;
   }
@@ -1427,13 +1460,13 @@ async function loadLeaderboard() {
 
       // Reward message (only for the player themselves if all done)
       const rewardLine = p.allFixed && rewardMsg
-        ? `<div style="margin-top:5px;font-size:0.75rem;color:#4ade80;padding:5px 8px;background:#0d2218;border-radius:6px;border:1px solid #16a34a">📍 ${rewardMsg}</div>`
+        ? `<div style="margin-top:5px;font-size:0.75rem;color:#4ade80;padding:5px 8px;background:#0d2218;border-radius:6px;border:1px solid #16a34a">📍 ${safeRewardMsg}</div>`
         : '';
 
       html += `<div class="lb-row${isMe ? ' lb-me' : ''}${extraClass ? ' '+extraClass : ''}">
         <div class="lb-rank">${rankIcon}</div>
         <div class="lb-body">
-          <div class="lb-name">${p.pseudo}</div>
+          <div class="lb-name">${escHtml(p.pseudo)}</div>
           <div class="lb-score">
             <strong>${p.fixedCount}${totalFixed ? '/'+totalFixed : ''} 📌</strong>
             ${timeBadge}${uniqBadge}${doneBadge}
@@ -1448,7 +1481,7 @@ async function loadLeaderboard() {
   document.getElementById('lbList').innerHTML = html;
   document.getElementById('lbRefresh').textContent = '↻ ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
   } catch(renderErr) {
-    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur rendu : ${renderErr.message}</p>`;
+    el.innerHTML = `<p style="color:#f87171;text-align:center;padding:40px">⚠️ Erreur rendu : ${escHtml(renderErr.message)}</p>`;
     console.error('loadLeaderboard error:', renderErr);
   }
 }
