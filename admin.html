@@ -108,8 +108,11 @@
     <h2>Urban3DQuest</h2>
     <p>Interface administrateur</p>
     <input type="email" id="pwEmail" placeholder="Email admin" autocomplete="email" style="margin-bottom:8px">
-    <input type="password" id="pwInput" placeholder="Mot de passe" autocomplete="current-password">
-    <button class="btn" id="pwBtn" onclick="checkPw()">Connexion</button>
+    <div style="position:relative;margin-bottom:0">
+      <input type="password" id="pwInput" placeholder="Mot de passe" autocomplete="current-password" style="width:100%;padding-right:44px">
+      <button type="button" id="pwToggle" onclick="togglePwVis()" style="position:absolute;right:0;top:0;height:100%;width:44px;background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1.1rem;display:flex;align-items:center;justify-content:center">👁</button>
+    </div>
+    <button class="btn" id="pwBtn" onclick="checkPw()" style="margin-top:12px">Connexion</button>
     <p id="pwErr" style="color:#f87171;font-size:0.78rem;margin-top:8px;display:none">Email ou mot de passe incorrect</p>
   </div>
 </div>
@@ -395,6 +398,7 @@ async function adminLogout(){
     await db.auth.signOut();
   }
 })();
+function togglePwVis(){var inp=document.getElementById('pwInput');var btn=document.getElementById('pwToggle');if(inp.type==='password'){inp.type='text';btn.textContent='🙈';}else{inp.type='password';btn.textContent='👁';}inp.focus();}
 ['pwEmail','pwInput'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('keydown',function(e){if(e.key==='Enter')checkPw();});});
 async function init(){var r=await db.from('config').select('key').limit(1);document.getElementById('dbDot').className='dot'+(r.error?'':' ok');startGeo();loadConfig();loadQrLov();}
 async function loadQuests(){var res=await db.from('config').select('value').eq('key','quests').single();if(res.data&&res.data.value){try{questList=JSON.parse(res.data.value);}catch(e){questList=[];}}else{questList=[];}var ra=await db.from('config').select('value').eq('key','activeQuests').single();if(ra.data&&ra.data.value){try{activeQuests=JSON.parse(ra.data.value);}catch(e){activeQuests=[];}}else{var old=await db.from('config').select('value').eq('key','activeQuest').single();var ov=(old.data&&old.data.value)||'';activeQuests=ov?[ov]:[];}populateQuestSelectors();}
